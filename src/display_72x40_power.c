@@ -15,6 +15,7 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/atomic.h>
 
 #include <zmk/event_manager.h>
 #include <zmk/workqueue.h>
@@ -46,9 +47,9 @@ ZMK_EVENT_IMPL(zmk_display_72x40_power_state_changed);
 #define D72X40_POWER_SYNC_FIRST_MS 1000
 #define D72X40_POWER_SYNC_RETRY_MS 1500
 
-static bool d72x40_power_state;
-static bool d72x40_power_known;
-static uint8_t d72x40_power_sync_left;
+static atomic_t d72x40_power_state;
+static atomic_t d72x40_power_known;
+static atomic_t d72x40_power_sync_left;
 
 static void d72x40_power_work_handler(struct k_work *work);
 static void d72x40_power_sync_handler(struct k_work *work);
@@ -71,9 +72,10 @@ static void d72x40_power_work_handler(struct k_work *work) {
 
     bool powered = nrf_power_usbregstatus_vbusdet_get(NRF_POWER);
 
-    if (!d72x40_power_known || powered != d72x40_power_state) {
-        d72x40_power_known = true;
-        d72x40_power_state = powered;
+    if (atomic_get(&d72x40_power_known) == 0 ||
+        powered != (atomic_get(&d72x40_power_state) != 0)) {
+        atomic_set(&d72x40_power_known, 1);
+        atomic_set(&d72x40_power_state, powered ? 1 : 0);
         d72x40_power_report(powered);
     }
 
@@ -84,12 +86,19 @@ static void d72x40_power_work_handler(struct k_work *work) {
 static void d72x40_power_sync_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
-    if (!d72x40_power_known || d72x40_power_sync_left == 0) {
+    if (atomic_get(&d72x40_power_known) == 0) {
         return;
     }
 
-    d72x40_power_report(d72x40_power_state);
-    if (--d72x40_power_sync_left > 0) {
+    atomic_val_t left = atomic_dec(&d72x40_power_sync_left);
+
+    if (left <= 0) {
+        atomic_set(&d72x40_power_sync_left, 0);
+        return;
+    }
+
+    d72x40_power_report(atomic_get(&d72x40_power_state) != 0);
+    if (left > 1) {
         k_work_schedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_power_sync_work,
                                   K_MSEC(D72X40_POWER_SYNC_RETRY_MS));
     }
@@ -105,11 +114,11 @@ static int d72x40_power_listener(const zmk_event_t *eh) {
     }
 
     if (ev->connected) {
-        d72x40_power_sync_left = D72X40_POWER_SYNC_ATTEMPTS;
+        atomic_set(&d72x40_power_sync_left, D72X40_POWER_SYNC_ATTEMPTS);
         k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_power_sync_work,
                                     K_MSEC(D72X40_POWER_SYNC_FIRST_MS));
     } else {
-        d72x40_power_sync_left = 0;
+        atomic_set(&d72x40_power_sync_left, 0);
         k_work_cancel_delayable(&d72x40_power_sync_work);
     }
     return ZMK_EV_EVENT_BUBBLE;

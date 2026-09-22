@@ -156,7 +156,11 @@ static int d72x40_reset_panel(void) {
     }
 
     k_sleep(K_MSEC(CONFIG_ZMK_DISPLAY_72X40_RESET_PULSE_MS));
-    (void)gpio_pin_set_dt(&d72x40_reset, 0);
+    err = gpio_pin_set_dt(&d72x40_reset, 0);
+    if (err < 0) {
+        LOG_ERR("display-72x40: cannot release the reset pin (%d)", err);
+        return 0;
+    }
     k_sleep(K_MSEC(CONFIG_ZMK_DISPLAY_72X40_RESET_SETTLE_MS));
     LOG_DBG("display-72x40: panel reset on %s pin %u", d72x40_reset.port->name, d72x40_reset.pin);
     return 0;
@@ -620,11 +624,11 @@ static void d72x40_retry(int err) {
 }
 
 /* Sends the contrast a setter asked for, if the panel is not at it already. */
-static void d72x40_send_contrast(void) {
+static int d72x40_send_contrast(void) {
     const int want = (int)atomic_get(&d72x40_contrast_want);
 
     if (want < 0 || want == d72x40_contrast_sent) {
-        return;
+        return 0;
     }
 
     int err = display_set_contrast(d72x40_panel, (uint8_t)want);
@@ -632,10 +636,9 @@ static void d72x40_send_contrast(void) {
     if (err == 0) {
         d72x40_contrast_sent = want;
     } else {
-        /* Not retried: the value stays asked for, and the next change or a
-         * client writing it again sends it. */
         LOG_WRN("display-72x40: contrast %d not taken (%d)", want, err);
     }
+    return err;
 }
 
 static void d72x40_work_handler(struct k_work *work) {
@@ -687,7 +690,13 @@ static void d72x40_work_handler(struct k_work *work) {
     /* A new contrast is one more bus operation, and counts as one. */
     if (contrast) {
         atomic_clear_bit(&d72x40_flags, D72X40_CONTRAST);
-        d72x40_send_contrast();
+        int contrast_err = d72x40_send_contrast();
+
+        if (contrast_err < 0) {
+            atomic_set_bit(&d72x40_flags, D72X40_CONTRAST);
+            d72x40_retry(contrast_err);
+            return;
+        }
         if (budget > 0) {
             budget--;
         }

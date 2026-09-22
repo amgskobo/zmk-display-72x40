@@ -43,16 +43,16 @@ In the consuming config's `config/west.yml`:
     - name: amgskobo
       url-base: https://github.com/amgskobo
   projects:
-- name: zmk-display-72x40
-  remote: amgskobo
-  revision: main
-  path: zmk-display-72x40
+    - name: zmk-display-72x40
+      remote: amgskobo
+      revision: main
+      path: zmk-display-72x40
 ```
 
 ### 2. Describe the panel
 
 Any Zephyr display that stores 8-pixel pages (`SCREEN_INFO_MONO_VTILED`)
-works. A 72x40 72x40 SSD1306 on I2C, for example:
+works. A 72x40 SSD1306 on I2C, for example:
 
 ```dts
 &i2c1 {
