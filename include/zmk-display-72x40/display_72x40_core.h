@@ -2,7 +2,7 @@
  * Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * The drawing half of zmk-display-042inch: plain C with no Zephyr or ZMK
+ * The drawing half of zmk-display-72x40: plain C with no Zephyr or ZMK
  * dependency, so that the host tests exercise exactly what the firmware runs.
  *
  * The canvas is the controller's own memory layout. A page-tiled monochrome
@@ -18,29 +18,29 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <zmk-display-042inch/display_042inch_font.h>
+#include <zmk-display-72x40/display_72x40_font.h>
 
 /* One text line is one page: a 7-pixel glyph over a blank row. */
-#define D042_PAGE_HEIGHT 8
+#define D72X40_PAGE_HEIGHT 8
 /* A glyph and the blank column after it. */
-#define D042_CELL 6
+#define D72X40_CELL 6
 /* The same, drawn two columns per font column. */
-#define D042_WIDE_CELL 12
+#define D72X40_WIDE_CELL 12
 
 /* Room for a layer name as ZMK stores it; the panel shows what fits. */
-#define D042_LAYER_TEXT_SIZE 24
+#define D72X40_LAYER_TEXT_SIZE 24
 
 /* The font's own symbols, as string literals for building lines. */
-#define D042_SYM_CHECK "\x01"
-#define D042_SYM_CROSS "\x02"
-#define D042_SYM_OPEN "\x03"
-#define D042_SYM_BLUETOOTH "\x04"
-#define D042_SYM_BOLT "\x05"
-#define D042_SYM_UNLOCKED "\x06"
+#define D72X40_SYM_CHECK "\x01"
+#define D72X40_SYM_CROSS "\x02"
+#define D72X40_SYM_OPEN "\x03"
+#define D72X40_SYM_BLUETOOTH "\x04"
+#define D72X40_SYM_BOLT "\x05"
+#define D72X40_SYM_UNLOCKED "\x06"
 
 /* A battery value that is not drawn at all, and one drawn as "--". */
-#define D042_BATTERY_HIDDEN 0xff
-#define D042_BATTERY_UNKNOWN 0xfe
+#define D72X40_BATTERY_HIDDEN 0xff
+#define D72X40_BATTERY_UNKNOWN 0xfe
 
 /*
  * Merge two changed runs of a page into one write when at most this many
@@ -48,34 +48,34 @@
  * addressing on top of its data, so resending a shorter gap is cheaper than
  * addressing a second run.
  */
-#define D042_SPAN_JOIN 12
+#define D72X40_SPAN_JOIN 12
 
-enum d042_transport {
-    D042_TRANSPORT_NONE = 0,
-    D042_TRANSPORT_USB,
-    D042_TRANSPORT_BLE,
+enum d72x40_transport {
+    D72X40_TRANSPORT_NONE = 0,
+    D72X40_TRANSPORT_USB,
+    D72X40_TRANSPORT_BLE,
 };
 
-enum d042_link {
+enum d72x40_link {
     /* Not connected; for a BLE profile, bonded but not connected. */
-    D042_LINK_DOWN = 0,
-    D042_LINK_UP,
+    D72X40_LINK_DOWN = 0,
+    D72X40_LINK_UP,
     /* A BLE profile with no bond, advertising to pair. */
-    D042_LINK_OPEN,
+    D72X40_LINK_OPEN,
 };
 
 /* Everything the panel shows. The renderer draws it and nothing else. */
-struct d042_status {
+struct d72x40_status {
     /* NUL-terminated; longer names are cut to the panel width. */
-    char layer[D042_LAYER_TEXT_SIZE];
-    /* enum d042_transport and enum d042_link. */
+    char layer[D72X40_LAYER_TEXT_SIZE];
+    /* enum d72x40_transport and enum d72x40_link. */
     uint8_t transport;
     uint8_t link;
     /* The BLE profile, counted from 1. */
     uint8_t profile;
-    /* Percent, D042_BATTERY_UNKNOWN or D042_BATTERY_HIDDEN. */
+    /* Percent, D72X40_BATTERY_UNKNOWN or D72X40_BATTERY_HIDDEN. */
     uint8_t battery;
-    /* The split peripheral's; D042_BATTERY_HIDDEN on a unibody. */
+    /* The split peripheral's; D72X40_BATTERY_HIDDEN on a unibody. */
     uint8_t peer_battery;
     /* On external power: this half, and the peripheral. */
     bool charging;
@@ -84,7 +84,7 @@ struct d042_status {
     bool unlocked;
 };
 
-struct d042_canvas {
+struct d72x40_canvas {
     /* pages * width column bytes, page 0 first, column 0 first. */
     uint8_t *buf;
     uint16_t width;
@@ -92,28 +92,28 @@ struct d042_canvas {
 };
 
 /* A run of columns of one page; x1 is inclusive. */
-struct d042_span {
+struct d72x40_span {
     uint16_t page;
     uint16_t x0;
     uint16_t x1;
 };
 
-static inline const uint8_t *d042_glyph(unsigned char c) {
-    if (c < D042_FONT_SYMBOL_COUNT) {
-        return d042_font_symbols[c];
+static inline const uint8_t *d72x40_glyph(unsigned char c) {
+    if (c < D72X40_FONT_SYMBOL_COUNT) {
+        return d72x40_font_symbols[c];
     }
-    if (c >= D042_FONT_ASCII_FIRST && c <= D042_FONT_ASCII_LAST) {
-        return d042_font_ascii[c - D042_FONT_ASCII_FIRST];
+    if (c >= D72X40_FONT_ASCII_FIRST && c <= D72X40_FONT_ASCII_LAST) {
+        return d72x40_font_ascii[c - D72X40_FONT_ASCII_FIRST];
     }
-    return d042_font_ascii['?' - D042_FONT_ASCII_FIRST];
+    return d72x40_font_ascii['?' - D72X40_FONT_ASCII_FIRST];
 }
 
-static inline void d042_clear(const struct d042_canvas *cv) {
+static inline void d72x40_clear(const struct d72x40_canvas *cv) {
     memset(cv->buf, 0, (size_t)cv->width * cv->pages);
 }
 
 /* ORs one column byte into the canvas; anything off the canvas is dropped. */
-static inline void d042_plot(const struct d042_canvas *cv, int x, int page, uint8_t bits) {
+static inline void d72x40_plot(const struct d72x40_canvas *cv, int x, int page, uint8_t bits) {
     if (x < 0 || x >= (int)cv->width || page < 0 || page >= (int)cv->pages) {
         return;
     }
@@ -122,38 +122,38 @@ static inline void d042_plot(const struct d042_canvas *cv, int x, int page, uint
 }
 
 /*
- * The pixel width of n glyphs laid out cell wide (D042_CELL or D042_WIDE_CELL),
+ * The pixel width of n glyphs laid out cell wide (D72X40_CELL or D72X40_WIDE_CELL),
  * not counting the blank column(s) after the last one.
  */
-static inline int d042_text_width(size_t n, int cell) {
+static inline int d72x40_text_width(size_t n, int cell) {
     if (n == 0) {
         return 0;
     }
-    int scale = cell / D042_CELL;
-    return (int)n * cell - (cell - scale * D042_FONT_WIDTH);
+    int scale = cell / D72X40_CELL;
+    return (int)n * cell - (cell - scale * D72X40_FONT_WIDTH);
 }
 
 /* Draws at most max glyphs of s in the page at x; returns the x after them. */
-static inline int d042_text_n(const struct d042_canvas *cv, int x, int page, const char *s,
+static inline int d72x40_text_n(const struct d72x40_canvas *cv, int x, int page, const char *s,
                             size_t max) {
     for (size_t i = 0; i < max && s[i] != '\0'; i++) {
-        const uint8_t *g = d042_glyph((unsigned char)s[i]);
-        for (int col = 0; col < D042_FONT_WIDTH; col++) {
-            d042_plot(cv, x + col, page, g[col]);
+        const uint8_t *g = d72x40_glyph((unsigned char)s[i]);
+        for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
+            d72x40_plot(cv, x + col, page, g[col]);
         }
-        x += D042_CELL;
+        x += D72X40_CELL;
     }
     return x;
 }
 
-static inline int d042_text(const struct d042_canvas *cv, int x, int page, const char *s) {
-    return d042_text_n(cv, x, page, s, SIZE_MAX);
+static inline int d72x40_text(const struct d72x40_canvas *cv, int x, int page, const char *s) {
+    return d72x40_text_n(cv, x, page, s, SIZE_MAX);
 }
 
 /* A font column stretched to two rows per row, below one blank row. */
-static inline uint16_t d042_tall_column(uint8_t column) {
+static inline uint16_t d72x40_tall_column(uint8_t column) {
     uint16_t tall = 0;
-    for (unsigned row = 0; row < D042_FONT_HEIGHT; row++) {
+    for (unsigned row = 0; row < D72X40_FONT_HEIGHT; row++) {
         if (column & (1u << row)) {
             tall = (uint16_t)(tall | (3u << (2u * row)));
         }
@@ -165,24 +165,24 @@ static inline uint16_t d042_tall_column(uint8_t column) {
  * Draws at most max glyphs of s across the page and the one below it, twice
  * the font's height and, when wide, twice its width.
  */
-static inline void d042_text_tall(const struct d042_canvas *cv, int x, int page, const char *s,
+static inline void d72x40_text_tall(const struct d72x40_canvas *cv, int x, int page, const char *s,
                                 size_t max, bool wide) {
     int scale = wide ? 2 : 1;
     for (size_t i = 0; i < max && s[i] != '\0'; i++) {
-        const uint8_t *g = d042_glyph((unsigned char)s[i]);
-        for (int col = 0; col < D042_FONT_WIDTH; col++) {
-            uint16_t tall = d042_tall_column(g[col]);
+        const uint8_t *g = d72x40_glyph((unsigned char)s[i]);
+        for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
+            uint16_t tall = d72x40_tall_column(g[col]);
             for (int copy = 0; copy < scale; copy++) {
-                d042_plot(cv, x + col * scale + copy, page, (uint8_t)(tall & 0xff));
-                d042_plot(cv, x + col * scale + copy, page + 1, (uint8_t)(tall >> 8));
+                d72x40_plot(cv, x + col * scale + copy, page, (uint8_t)(tall & 0xff));
+                d72x40_plot(cv, x + col * scale + copy, page + 1, (uint8_t)(tall >> 8));
             }
         }
-        x += D042_CELL * scale;
+        x += D72X40_CELL * scale;
     }
 }
 
 /* Appends s to a NUL-terminated buffer of size bytes, cutting it to fit. */
-static inline void d042_append(char *buf, size_t size, const char *s) {
+static inline void d72x40_append(char *buf, size_t size, const char *s) {
     size_t len = strlen(buf);
     while (*s != '\0' && len + 1 < size) {
         buf[len++] = *s++;
@@ -190,7 +190,7 @@ static inline void d042_append(char *buf, size_t size, const char *s) {
     buf[len] = '\0';
 }
 
-static inline void d042_append_u8(char *buf, size_t size, uint8_t value) {
+static inline void d72x40_append_u8(char *buf, size_t size, uint8_t value) {
     char digits[4];
     size_t n = 0;
     do {
@@ -202,53 +202,53 @@ static inline void d042_append_u8(char *buf, size_t size, uint8_t value) {
         text[i] = digits[n - 1 - i];
     }
     text[n] = '\0';
-    d042_append(buf, size, text);
+    d72x40_append(buf, size, text);
 }
 
-static inline void d042_append_battery(char *buf, size_t size, uint8_t level) {
-    if (level == D042_BATTERY_UNKNOWN) {
-        d042_append(buf, size, "--");
+static inline void d72x40_append_battery(char *buf, size_t size, uint8_t level) {
+    if (level == D72X40_BATTERY_UNKNOWN) {
+        d72x40_append(buf, size, "--");
         return;
     }
-    d042_append_u8(buf, size, level > 100 ? 100 : level);
-    d042_append(buf, size, "%");
+    d72x40_append_u8(buf, size, level > 100 ? 100 : level);
+    d72x40_append(buf, size, "%");
 }
 
 /*
  * Draws at most max glyphs of s with its top at row, which need not be a page
  * boundary; a glyph then spans two pages.
  */
-static inline void d042_text_row(const struct d042_canvas *cv, int x, int row, const char *s,
+static inline void d72x40_text_row(const struct d72x40_canvas *cv, int x, int row, const char *s,
                                size_t max) {
-    int page = row / D042_PAGE_HEIGHT;
-    unsigned shift = (unsigned)(row % D042_PAGE_HEIGHT);
+    int page = row / D72X40_PAGE_HEIGHT;
+    unsigned shift = (unsigned)(row % D72X40_PAGE_HEIGHT);
 
     for (size_t i = 0; i < max && s[i] != '\0'; i++) {
-        const uint8_t *g = d042_glyph((unsigned char)s[i]);
+        const uint8_t *g = d72x40_glyph((unsigned char)s[i]);
 
-        for (int col = 0; col < D042_FONT_WIDTH; col++) {
+        for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
             uint16_t shifted = (uint16_t)((uint16_t)g[col] << shift);
 
-            d042_plot(cv, x + col, page, (uint8_t)(shifted & 0xff));
+            d72x40_plot(cv, x + col, page, (uint8_t)(shifted & 0xff));
             if (shift != 0) {
-                d042_plot(cv, x + col, page + 1, (uint8_t)(shifted >> 8));
+                d72x40_plot(cv, x + col, page + 1, (uint8_t)(shifted >> 8));
             }
         }
-        x += D042_CELL;
+        x += D72X40_CELL;
     }
 }
 
 /* Draws at most n glyphs of s centred across the canvas, with its top at row. */
-static inline void d042_text_centred(const struct d042_canvas *cv, int row, const char *s,
+static inline void d72x40_text_centred(const struct d72x40_canvas *cv, int row, const char *s,
                                    size_t n) {
-    d042_text_row(cv, ((int)cv->width - d042_text_width(n, D042_CELL)) / 2, row, s, n);
+    d72x40_text_row(cv, ((int)cv->width - d72x40_text_width(n, D72X40_CELL)) / 2, row, s, n);
 }
 
 /*
  * Where a name too long for one line breaks: after the last hyphen that
  * leaves both halves within max, else at max.
  */
-static inline size_t d042_wrap_at(const char *s, size_t len, size_t max) {
+static inline size_t d72x40_wrap_at(const char *s, size_t len, size_t max) {
     for (size_t i = max; i > 0; i--) {
         if (s[i - 1] == '-' && len - i <= max) {
             return i;
@@ -266,72 +266,72 @@ static inline size_t d042_wrap_at(const char *s, size_t len, size_t max) {
  * The block is always two pages tall, so that the lines below it never move
  * when the layer changes.
  */
-static inline int d042_render_layer(const struct d042_canvas *cv, const char *name) {
+static inline int d72x40_render_layer(const struct d72x40_canvas *cv, const char *name) {
     size_t len = strlen(name);
-    size_t max_narrow = (size_t)(cv->width / D042_CELL);
+    size_t max_narrow = (size_t)(cv->width / D72X40_CELL);
 
     if (cv->pages < 2) {
-        d042_text_centred(cv, 0, name, len < max_narrow ? len : max_narrow);
+        d72x40_text_centred(cv, 0, name, len < max_narrow ? len : max_narrow);
         return 1;
     }
 
     /* n double-size glyphs take 12n - 2 columns. */
-    size_t max_wide = (size_t)((cv->width + 2) / D042_WIDE_CELL);
+    size_t max_wide = (size_t)((cv->width + 2) / D72X40_WIDE_CELL);
 
     if (len <= max_wide) {
-        int width = d042_text_width(len, D042_WIDE_CELL);
+        int width = d72x40_text_width(len, D72X40_WIDE_CELL);
 
-        d042_text_tall(cv, ((int)cv->width - width) / 2, 0, name, len, true);
+        d72x40_text_tall(cv, ((int)cv->width - width) / 2, 0, name, len, true);
         return 2;
     }
 
     if (len <= max_narrow) {
         /* One ordinary line, centred in the two-page block. */
-        d042_text_centred(cv, (2 * D042_PAGE_HEIGHT - D042_FONT_HEIGHT) / 2, name, len);
+        d72x40_text_centred(cv, (2 * D72X40_PAGE_HEIGHT - D72X40_FONT_HEIGHT) / 2, name, len);
         return 2;
     }
 
-    size_t split = d042_wrap_at(name, len, max_narrow);
+    size_t split = d72x40_wrap_at(name, len, max_narrow);
     size_t rest = len - split;
 
-    d042_text_centred(cv, 0, name, split);
-    d042_text_centred(cv, D042_PAGE_HEIGHT, name + split, rest < max_narrow ? rest : max_narrow);
+    d72x40_text_centred(cv, 0, name, split);
+    d72x40_text_centred(cv, D72X40_PAGE_HEIGHT, name + split, rest < max_narrow ? rest : max_narrow);
     return 2;
 }
 
 /* The host connection on the left, Studio's lock on the right. */
-static inline int d042_render_output(const struct d042_canvas *cv, int page,
-                                   const struct d042_status *st) {
+static inline int d72x40_render_output(const struct d72x40_canvas *cv, int page,
+                                   const struct d72x40_status *st) {
     char line[16] = "";
     switch (st->transport) {
-    case D042_TRANSPORT_USB:
-        d042_append(line, sizeof(line), "USB");
-        if (st->link != D042_LINK_UP) {
-            d042_append(line, sizeof(line), " " D042_SYM_CROSS);
+    case D72X40_TRANSPORT_USB:
+        d72x40_append(line, sizeof(line), "USB");
+        if (st->link != D72X40_LINK_UP) {
+            d72x40_append(line, sizeof(line), " " D72X40_SYM_CROSS);
         }
         break;
-    case D042_TRANSPORT_BLE:
-        d042_append(line, sizeof(line), D042_SYM_BLUETOOTH);
-        d042_append_u8(line, sizeof(line), st->profile);
-        d042_append(line, sizeof(line), " ");
-        d042_append(line, sizeof(line),
-                  st->link == D042_LINK_UP     ? D042_SYM_CHECK
-                  : st->link == D042_LINK_OPEN ? D042_SYM_OPEN
-                                             : D042_SYM_CROSS);
+    case D72X40_TRANSPORT_BLE:
+        d72x40_append(line, sizeof(line), D72X40_SYM_BLUETOOTH);
+        d72x40_append_u8(line, sizeof(line), st->profile);
+        d72x40_append(line, sizeof(line), " ");
+        d72x40_append(line, sizeof(line),
+                  st->link == D72X40_LINK_UP     ? D72X40_SYM_CHECK
+                  : st->link == D72X40_LINK_OPEN ? D72X40_SYM_OPEN
+                                             : D72X40_SYM_CROSS);
         break;
     default:
-        d042_append(line, sizeof(line), D042_SYM_CROSS);
+        d72x40_append(line, sizeof(line), D72X40_SYM_CROSS);
         break;
     }
-    d042_text(cv, 0, page, line);
+    d72x40_text(cv, 0, page, line);
     if (st->unlocked) {
-        d042_text(cv, (int)cv->width - D042_FONT_WIDTH, page, D042_SYM_UNLOCKED);
+        d72x40_text(cv, (int)cv->width - D72X40_FONT_WIDTH, page, D72X40_SYM_UNLOCKED);
     }
     return page + 1;
 }
 
 /* The battery line(s) as text, with how they are placed. */
-struct d042_battery_text {
+struct d72x40_battery_text {
     char left[12];
     char right[12];
     /* One below the other rather than side by side. */
@@ -345,28 +345,28 @@ struct d042_battery_text {
  * below the other when the panel is too narrow for both; a unibody shows one
  * "BAT". A bolt after the first letter means USB power.
  */
-static inline void d042_battery_text(const struct d042_canvas *cv, const struct d042_status *st,
-                                   struct d042_battery_text *out) {
+static inline void d72x40_battery_text(const struct d72x40_canvas *cv, const struct d72x40_status *st,
+                                   struct d72x40_battery_text *out) {
     memset(out, 0, sizeof(*out));
 
     char own[6] = "";
-    if (st->battery != D042_BATTERY_HIDDEN) {
-        d042_append_battery(own, sizeof(own), st->battery);
+    if (st->battery != D72X40_BATTERY_HIDDEN) {
+        d72x40_append_battery(own, sizeof(own), st->battery);
     }
 
-    if (st->peer_battery == D042_BATTERY_HIDDEN) {
-        if (st->battery == D042_BATTERY_HIDDEN) {
+    if (st->peer_battery == D72X40_BATTERY_HIDDEN) {
+        if (st->battery == D72X40_BATTERY_HIDDEN) {
             out->empty = true;
             return;
         }
-        d042_append(out->left, sizeof(out->left), "BAT");
-        d042_append(out->left, sizeof(out->left), st->charging ? D042_SYM_BOLT : " ");
-        d042_append(out->left, sizeof(out->left), own);
+        d72x40_append(out->left, sizeof(out->left), "BAT");
+        d72x40_append(out->left, sizeof(out->left), st->charging ? D72X40_SYM_BOLT : " ");
+        d72x40_append(out->left, sizeof(out->left), own);
         return;
     }
 
     char peer[6] = "";
-    d042_append_battery(peer, sizeof(peer), st->peer_battery);
+    d72x40_append_battery(peer, sizeof(peer), st->peer_battery);
 
     /*
      * A bolt after the letter says that half is on external power, and takes
@@ -379,62 +379,62 @@ static inline void d042_battery_text(const struct d042_canvas *cv, const struct 
     size_t left_len = has_own ? 2 + strlen(own) : 0;
     size_t right_len = 2 + strlen(peer);
     int spaces = (has_own && !st->charging ? 1 : 0) + (st->peer_charging ? 0 : 1);
-    int side_by_side = d042_text_width(left_len, D042_CELL) + D042_CELL +
-                       d042_text_width(right_len, D042_CELL);
+    int side_by_side = d72x40_text_width(left_len, D72X40_CELL) + D72X40_CELL +
+                       d72x40_text_width(right_len, D72X40_CELL);
     bool compact = has_own && side_by_side > (int)cv->width;
 
     if (compact) {
         /* Every space that can go is worth a cell. */
-        out->stacked = side_by_side - spaces * D042_CELL > (int)cv->width;
+        out->stacked = side_by_side - spaces * D72X40_CELL > (int)cv->width;
     }
 
     const char *gap = compact && !out->stacked ? "" : " ";
 
     if (has_own) {
-        d042_append(out->left, sizeof(out->left), "L");
-        d042_append(out->left, sizeof(out->left), st->charging ? D042_SYM_BOLT : gap);
-        d042_append(out->left, sizeof(out->left), own);
+        d72x40_append(out->left, sizeof(out->left), "L");
+        d72x40_append(out->left, sizeof(out->left), st->charging ? D72X40_SYM_BOLT : gap);
+        d72x40_append(out->left, sizeof(out->left), own);
     }
-    d042_append(out->right, sizeof(out->right), "R");
-    d042_append(out->right, sizeof(out->right), st->peer_charging ? D042_SYM_BOLT : gap);
-    d042_append(out->right, sizeof(out->right), peer);
+    d72x40_append(out->right, sizeof(out->right), "R");
+    d72x40_append(out->right, sizeof(out->right), st->peer_charging ? D72X40_SYM_BOLT : gap);
+    d72x40_append(out->right, sizeof(out->right), peer);
 }
 
-static inline int d042_battery_pages(const struct d042_canvas *cv, const struct d042_status *st) {
-    struct d042_battery_text text;
+static inline int d72x40_battery_pages(const struct d72x40_canvas *cv, const struct d72x40_status *st) {
+    struct d72x40_battery_text text;
 
-    d042_battery_text(cv, st, &text);
+    d72x40_battery_text(cv, st, &text);
     return text.empty ? 0 : (text.stacked ? 2 : 1);
 }
 
-static inline int d042_render_battery(const struct d042_canvas *cv, int page,
-                                    const struct d042_status *st) {
-    struct d042_battery_text text;
+static inline int d72x40_render_battery(const struct d72x40_canvas *cv, int page,
+                                    const struct d72x40_status *st) {
+    struct d72x40_battery_text text;
 
-    d042_battery_text(cv, st, &text);
+    d72x40_battery_text(cv, st, &text);
     if (text.empty) {
         return page;
     }
 
-    d042_text(cv, 0, page, text.left);
+    d72x40_text(cv, 0, page, text.left);
     if (text.right[0] == '\0') {
         return page + 1;
     }
     if (text.stacked) {
         if (page + 1 < (int)cv->pages) {
-            d042_text(cv, 0, page + 1, text.right);
+            d72x40_text(cv, 0, page + 1, text.right);
         }
         return page + 2;
     }
-    d042_text(cv, (int)cv->width - d042_text_width(strlen(text.right), D042_CELL), page, text.right);
+    d72x40_text(cv, (int)cv->width - d72x40_text_width(strlen(text.right), D72X40_CELL), page, text.right);
     return page + 1;
 }
 
 /* Host lock indicators. */
-static inline int d042_render_indicators(const struct d042_canvas *cv, int page,
-                                       const struct d042_status *st) {
+static inline int d72x40_render_indicators(const struct d72x40_canvas *cv, int page,
+                                       const struct d72x40_status *st) {
     if (st->caps_lock) {
-        d042_text(cv, 0, page, "CAPS");
+        d72x40_text(cv, 0, page, "CAPS");
     }
     return page + 1;
 }
@@ -448,63 +448,63 @@ static inline int d042_render_indicators(const struct d042_canvas *cv, int page,
  * The indicator line is counted whether or not anything is on it, so that
  * Caps Lock coming and going never moves the lines above it.
  */
-static inline void d042_render(const struct d042_canvas *cv, const struct d042_status *st) {
-    d042_clear(cv);
+static inline void d72x40_render(const struct d72x40_canvas *cv, const struct d72x40_status *st) {
+    d72x40_clear(cv);
 
-    int lines = (cv->pages >= 2 ? 2 : 1) + 1 + d042_battery_pages(cv, st) + 1;
+    int lines = (cv->pages >= 2 ? 2 : 1) + 1 + d72x40_battery_pages(cv, st) + 1;
     int spare = (int)cv->pages - lines;
     int gap = spare >= 3 ? 1 : 0;
 
-    int page = d042_render_layer(cv, st->layer) + gap;
+    int page = d72x40_render_layer(cv, st->layer) + gap;
 
     if (page < (int)cv->pages) {
-        page = d042_render_output(cv, page, st) + gap;
+        page = d72x40_render_output(cv, page, st) + gap;
     }
     if (page < (int)cv->pages) {
-        page = d042_render_battery(cv, page, st) + gap;
+        page = d72x40_render_battery(cv, page, st) + gap;
     }
     if (page < (int)cv->pages) {
-        (void)d042_render_indicators(cv, page, st);
+        (void)d72x40_render_indicators(cv, page, st);
     }
 }
 
 /* True when the canvas pixel is lit; anything off the canvas is dark. */
-static inline bool d042_canvas_pixel(const struct d042_canvas *cv, int x, int y) {
-    if (x < 0 || x >= (int)cv->width || y < 0 || y >= (int)cv->pages * D042_PAGE_HEIGHT) {
+static inline bool d72x40_canvas_pixel(const struct d72x40_canvas *cv, int x, int y) {
+    if (x < 0 || x >= (int)cv->width || y < 0 || y >= (int)cv->pages * D72X40_PAGE_HEIGHT) {
         return false;
     }
-    uint8_t column = cv->buf[(size_t)(y / D042_PAGE_HEIGHT) * cv->width + (size_t)x];
+    uint8_t column = cv->buf[(size_t)(y / D72X40_PAGE_HEIGHT) * cv->width + (size_t)x];
 
-    return (column >> (y % D042_PAGE_HEIGHT)) & 1;
+    return (column >> (y % D72X40_PAGE_HEIGHT)) & 1;
 }
 
 /* The canvas size a panel of this size needs when the drawing is turned. */
-#define D042_TURNED(rotation) ((rotation) == 90 || (rotation) == 270)
-#define D042_CANVAS_WIDTH(panel_width, panel_height, rotation)                                       \
-    (D042_TURNED(rotation) ? (panel_height) : (panel_width))
-#define D042_CANVAS_HEIGHT(panel_width, panel_height, rotation)                                      \
-    (D042_TURNED(rotation) ? (panel_width) : (panel_height))
+#define D72X40_TURNED(rotation) ((rotation) == 90 || (rotation) == 270)
+#define D72X40_CANVAS_WIDTH(panel_width, panel_height, rotation)                                       \
+    (D72X40_TURNED(rotation) ? (panel_height) : (panel_width))
+#define D72X40_CANVAS_HEIGHT(panel_width, panel_height, rotation)                                      \
+    (D72X40_TURNED(rotation) ? (panel_width) : (panel_height))
 
 /*
  * Copies the canvas into a frame in the panel's own layout, turning it
  * counter-clockwise by rotation degrees (0, 90, 180 or 270) on the way. The
  * canvas of a turned panel is as wide as the panel is tall, and vice versa.
  */
-static inline void d042_project(const struct d042_canvas *cv, uint8_t *frame, uint16_t width,
+static inline void d72x40_project(const struct d72x40_canvas *cv, uint8_t *frame, uint16_t width,
                               uint16_t pages, uint16_t rotation) {
     if (rotation == 0) {
         memcpy(frame, cv->buf, (size_t)width * pages);
         return;
     }
 
-    int canvas_height = (int)cv->pages * D042_PAGE_HEIGHT;
+    int canvas_height = (int)cv->pages * D72X40_PAGE_HEIGHT;
 
     for (uint16_t page = 0; page < pages; page++) {
         for (uint16_t x = 0; x < width; x++) {
             uint8_t column = 0;
 
-            for (int bit = 0; bit < D042_PAGE_HEIGHT; bit++) {
-                int y = page * D042_PAGE_HEIGHT + bit;
+            for (int bit = 0; bit < D72X40_PAGE_HEIGHT; bit++) {
+                int y = page * D72X40_PAGE_HEIGHT + bit;
                 int cx;
                 int cy;
 
@@ -519,7 +519,7 @@ static inline void d042_project(const struct d042_canvas *cv, uint8_t *frame, ui
                     cx = y;
                     cy = canvas_height - 1 - x;
                 }
-                if (d042_canvas_pixel(cv, cx, cy)) {
+                if (d72x40_canvas_pixel(cv, cx, cy)) {
                     column = (uint8_t)(column | (1u << bit));
                 }
             }
@@ -532,18 +532,18 @@ static inline void d042_project(const struct d042_canvas *cv, uint8_t *frame, ui
  * Finds the next run of columns at or after the cursor (*page, *x) where want
  * differs from shown, and moves the cursor past it. A page whose bit is clear
  * in valid has unknown content on the panel, so it is one run from edge to
- * edge. Runs of a page at most D042_SPAN_JOIN unchanged columns apart become
+ * edge. Runs of a page at most D72X40_SPAN_JOIN unchanged columns apart become
  * one. Returns false once no page differs.
  */
-static inline bool d042_next_span(const uint8_t *want, const uint8_t *shown, uint16_t width,
+static inline bool d72x40_next_span(const uint8_t *want, const uint8_t *shown, uint16_t width,
                                 uint16_t pages, uint32_t valid, uint16_t *page, uint16_t *x,
-                                struct d042_span *span) {
+                                struct d72x40_span *span) {
     for (; *page < pages; (*page)++, *x = 0) {
         const uint8_t *w = &want[(size_t)*page * width];
         const uint8_t *s = &shown[(size_t)*page * width];
 
         if (!(valid & (1ul << *page)) && *x == 0) {
-            *span = (struct d042_span){.page = *page, .x0 = 0, .x1 = (uint16_t)(width - 1)};
+            *span = (struct d72x40_span){.page = *page, .x0 = 0, .x1 = (uint16_t)(width - 1)};
             *x = width;
             return true;
         }
@@ -562,12 +562,12 @@ static inline bool d042_next_span(const uint8_t *want, const uint8_t *shown, uin
             if (w[col] == s[col]) {
                 continue;
             }
-            if (col - end - 1 > D042_SPAN_JOIN) {
+            if (col - end - 1 > D72X40_SPAN_JOIN) {
                 break;
             }
             end = col;
         }
-        *span = (struct d042_span){.page = *page, .x0 = start, .x1 = end};
+        *span = (struct d72x40_span){.page = *page, .x0 = start, .x1 = end};
         *x = (uint16_t)(end + 1);
         return true;
     }

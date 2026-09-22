@@ -8,11 +8,11 @@
 #include <dt-bindings/zmk/kscan_mock.h>
 
 /* The board's SDL display would need a desktop; the recording one stands in. */
-&sd042_dc {
+&sd72x40_dc {
     status = "disabled";
 };
 
-&input_sd042_touch {
+&input_sd72x40_touch {
     status = "disabled";
 };
 
@@ -55,7 +55,7 @@
     };
 
     status_panel {
-        compatible = "zmk,display-042inch";
+        compatible = "zmk,display-72x40";
         display = <&panel>;
         hidden-layers = <2>;
         sync-input-device = <&sync_pad>;

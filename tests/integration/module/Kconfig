@@ -1,6 +1,6 @@
 # Copyright (c) 2026 amgskobo
 # SPDX-License-Identifier: MIT
 
-config ZMK_DISPLAY_042INCH_TEST
-    bool "Run zmk-display-042inch runtime self-tests against a recording display"
-    depends on ZMK_DISPLAY_042INCH
+config ZMK_DISPLAY_72X40_TEST
+    bool "Run zmk-display-72x40 runtime self-tests against a recording display"
+    depends on ZMK_DISPLAY_72X40

@@ -21,14 +21,14 @@
  * @retval 0 on success.
  * @retval -ENODEV if the panel is not ready.
  */
-int zmk_display_042inch_refresh(void);
+int zmk_display_72x40_refresh(void);
 
 /*
  * Settings that can change while the keyboard runs. Each starts at its build
  * time value (the Kconfig options and the node's contrast property), takes
  * effect at once, and is safe to call from any thread: it records the value and
  * schedules the module's own work, which is the only thing that writes to the
- * panel. With CONFIG_ZMK_DISPLAY_042INCH_CUSTOM_SETTINGS a Studio client sets them.
+ * panel. With CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS a Studio client sets them.
  */
 
 /**
@@ -39,9 +39,9 @@ int zmk_display_042inch_refresh(void);
  * off, which lights a panel it had darkened and keeps it lit until the keyboard
  * powers off. Values above ten minutes are cut to ten minutes.
  */
-void zmk_display_042inch_set_blank_after_ms(uint32_t ms);
+void zmk_display_72x40_set_blank_after_ms(uint32_t ms);
 
 /**
  * @brief Set the panel's contrast (brightness), 0 to 255.
  */
-void zmk_display_042inch_set_contrast(uint8_t contrast);
+void zmk_display_72x40_set_contrast(uint8_t contrast);

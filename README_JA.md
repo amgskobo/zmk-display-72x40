@@ -1,6 +1,6 @@
-# ZMK Display 0.42-inch
+# ZMK Display 72x40
 
-[![Test](https://github.com/amgskobo/zmk-display-0.42inch/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-0.42inch/actions/workflows/test.yml)
+[![Test](https://github.com/amgskobo/zmk-display-72x40/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-72x40/actions/workflows/test.yml)
 
 [English](README.md)
 
@@ -41,10 +41,10 @@
     - name: amgskobo
       url-base: https://github.com/amgskobo
   projects:
-- name: zmk-display-0.42inch
+- name: zmk-display-72x40
   remote: amgskobo
   revision: main
-  path: zmk-display-042inch
+  path: zmk-display-72x40
 ```
 
 ### 2. パネルを記述する
@@ -81,7 +81,7 @@ unibody キーボード、または split の central(keymap を持つ側)に:
 ```dts
 / {
     status_panel {
-        compatible = "zmk,display-042inch";
+        compatible = "zmk,display-72x40";
         display = <&oled>;
         /* 任意 */
         hidden-layers = <6 7 8>;
@@ -92,7 +92,7 @@ unibody キーボード、または split の central(keymap を持つ側)に:
 };
 ```
 
-このノードで `CONFIG_ZMK_DISPLAY_042INCH` が有効になり、ディスプレイドライバの
+このノードで `CONFIG_ZMK_DISPLAY_72X40` が有効になり、ディスプレイドライバの
 サブシステムも自動で選択されます。`CONFIG_ZMK_DISPLAY`(ZMK の LVGL 表示)は
 オフのままにしてください。両方が同じパネルを持つことになるため、オンの間は
 このモジュールはビルドされません。
@@ -110,20 +110,20 @@ unibody キーボード、または split の central(keymap を持つ側)に:
 
 | Kconfig | 既定値 | 意味 |
 | --- | --- | --- |
-| `CONFIG_ZMK_DISPLAY_042INCH_CUSTOM_SETTINGS` | `n` | 下記の設定を Studio クライアントに公開します(zmk-feature-custom-settings が必要)。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS` | `30000` | パネルの消灯タイマー。最後のキー・エンコーダー・ポインター操作からこの時間で消灯します。`0` で無効。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS` | `20` | 連続した変化を 1 回の再描画にまとめる待ち時間。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS` | `50` | 同期デバイスがレポート後「レポート中」とみなされる時間。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_RETRY_MS` | `1000` | 書き込み失敗時の再試行間隔(3 回まで)。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_PEER_POWER` | `y` | 外部電源で動作中の peripheral に稲妻を描きます(split リレーが必要)。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_POWER_REPORTER` | `y` | split peripheral 側にビルドされ、自分の電源状態を central へ伝えます。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_POWER_POLL_MS` | `2000` | その peripheral が VBUS を見る間隔。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_RESET_INIT_PRIORITY` | `84` | リセットパルスの POST_KERNEL 優先度。ディスプレイドライバより前。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_RESET_PULSE_MS` | `10` | リセット線を Low に保つ時間。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_RESET_SETTLE_MS` | `50` | 解除後に待つ時間。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_INIT_PRIORITY` | `86` | 起動時のパネル消去の POST_KERNEL 優先度。ディスプレイドライバより後。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_PM_INIT_PRIORITY` | `45` | `&soft_off` 用の電源オフデバイスの POST_KERNEL 優先度。パネルのバスより前。 |
-| `CONFIG_ZMK_DISPLAY_042INCH_PM_LATE_INIT_PRIORITY` | `55` | 逆順にサスペンドするアイドルスリープ用の同じデバイス。パネルのバスより後。 |
+| `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS` | `n` | 下記の設定を Studio クライアントに公開します(zmk-feature-custom-settings が必要)。 |
+| `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` | `30000` | パネルの消灯タイマー。最後のキー・エンコーダー・ポインター操作からこの時間で消灯します。`0` で無効。 |
+| `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` | `20` | 連続した変化を 1 回の再描画にまとめる待ち時間。 |
+| `CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS` | `50` | 同期デバイスがレポート後「レポート中」とみなされる時間。 |
+| `CONFIG_ZMK_DISPLAY_72X40_RETRY_MS` | `1000` | 書き込み失敗時の再試行間隔(3 回まで)。 |
+| `CONFIG_ZMK_DISPLAY_72X40_PEER_POWER` | `y` | 外部電源で動作中の peripheral に稲妻を描きます(split リレーが必要)。 |
+| `CONFIG_ZMK_DISPLAY_72X40_POWER_REPORTER` | `y` | split peripheral 側にビルドされ、自分の電源状態を central へ伝えます。 |
+| `CONFIG_ZMK_DISPLAY_72X40_POWER_POLL_MS` | `2000` | その peripheral が VBUS を見る間隔。 |
+| `CONFIG_ZMK_DISPLAY_72X40_RESET_INIT_PRIORITY` | `84` | リセットパルスの POST_KERNEL 優先度。ディスプレイドライバより前。 |
+| `CONFIG_ZMK_DISPLAY_72X40_RESET_PULSE_MS` | `10` | リセット線を Low に保つ時間。 |
+| `CONFIG_ZMK_DISPLAY_72X40_RESET_SETTLE_MS` | `50` | 解除後に待つ時間。 |
+| `CONFIG_ZMK_DISPLAY_72X40_INIT_PRIORITY` | `86` | 起動時のパネル消去の POST_KERNEL 優先度。ディスプレイドライバより後。 |
+| `CONFIG_ZMK_DISPLAY_72X40_PM_INIT_PRIORITY` | `45` | `&soft_off` 用の電源オフデバイスの POST_KERNEL 優先度。パネルのバスより前。 |
+| `CONFIG_ZMK_DISPLAY_72X40_PM_LATE_INIT_PRIORITY` | `55` | 逆順にサスペンドするアイドルスリープ用の同じデバイス。パネルのバスより後。 |
 
 ## 表示内容
 
@@ -143,7 +143,7 @@ unibody キーボード、または split の central(keymap を持つ側)に:
 バイト)で RAM に置き、パネルに表示中の内容の写しと並べて持ちます。
 
 1. 購読しているイベントはフラグを立て、ZMK の低優先度ワークキューに 1 回分の
-   処理を `CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS` 後で予約します。非表示
+   処理を `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` 後で予約します。非表示
    レイヤーのイベントはその前に戻ります。
 2. 処理は状態を読んでフレーム全体を描きます。数千命令程度なので、描画の途中
    状態は持ちません。
@@ -174,9 +174,9 @@ SSD1306 ドライバは `reset-gpios` を渡されると、解除した直後に
 送ります。これを NACK で返すパネル(0.42 インチの 72x40 モジュールがそうです)
 ではドライバの初期化が `-EIO` で失敗し、再試行もされないため画面は永久に暗い
 ままになります。このモジュールはドライバより前
-(`CONFIG_ZMK_DISPLAY_042INCH_RESET_INIT_PRIORITY`、`CONFIG_DISPLAY_INIT_PRIORITY`
-より小さい値)でパルスを出し、`CONFIG_ZMK_DISPLAY_042INCH_RESET_PULSE_MS` の間
-保持してから `CONFIG_ZMK_DISPLAY_042INCH_RESET_SETTLE_MS` 待つので、ドライバは
+(`CONFIG_ZMK_DISPLAY_72X40_RESET_INIT_PRIORITY`、`CONFIG_DISPLAY_INIT_PRIORITY`
+より小さい値)でパルスを出し、`CONFIG_ZMK_DISPLAY_72X40_RESET_PULSE_MS` の間
+保持してから `CONFIG_ZMK_DISPLAY_72X40_RESET_SETTLE_MS` 待つので、ドライバは
 起動を終えたコントローラーに対して初期化を行えます。パネル側のノードには
 リセットピンを書かないでください。
 
@@ -200,11 +200,11 @@ central は自分が給電されていることを知っているので、自分
 出せます。split の peripheral は違います。USB HID を出せない以上 USB スタック
 を積んでおらず、自分の電源が USB かどうかを ZMK から知る方法がありません。
 
-`CONFIG_ZMK_DISPLAY_042INCH_POWER_REPORTER` は、パネルではなく peripheral 側に
+`CONFIG_ZMK_DISPLAY_72X40_POWER_REPORTER` は、パネルではなく peripheral 側に
 ビルドされ、SoC の USB VBUS 検出を直接読みます(USB 周辺機能を持つ nRF では
 レジスタ 1 ビットで、USB スタックの有無に関係なく読めます)。間隔は
-`CONFIG_ZMK_DISPLAY_042INCH_POWER_POLL_MS` です。状態が変わるとフォークの split
-リレーで central へ送り、`CONFIG_ZMK_DISPLAY_042INCH_PEER_POWER` がその半分の
+`CONFIG_ZMK_DISPLAY_72X40_POWER_POLL_MS` です。状態が変わるとフォークの split
+リレーで central へ送り、`CONFIG_ZMK_DISPLAY_72X40_PEER_POWER` がその半分の
 バッテリー残量の隣に稲妻として描きます。
 
 リンクは「確立」と報告された時点ではまだ central がリレー特性を購読しておらず、
@@ -225,7 +225,7 @@ IQS7211E などのタッチコントローラーは、データがあると読�
 の STOP でウィンドウが早く閉じるおそれがあります。
 
 `sync-input-device` にそのコントローラーを指定すると、モジュールはその入力
-レポートを監視します。コントローラーが `CONFIG_ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS`
+レポートを監視します。コントローラーが `CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS`
 以内にレポートしている間、パネルへの書き込みは次のレポートを待ち、その直後に
 1 レポートにつき 1 回ずつ送ります。そのときコントローラーの読み取りは終わった
 ばかりで、次のサンプルは 1 レポート周期先です。再描画は変化した区間 1 つにつき
@@ -239,7 +239,7 @@ IQS7211E などのタッチコントローラーは、データがあると読�
 
 ## 消費電力
 
-- `CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS`(既定 30 秒)で、最後のキー・
+- `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS`(既定 30 秒)で、最後のキー・
   エンコーダー・ポインター操作(ZMK のアイドル判定と同じ入力)からその時間が
   たつとパネルを消灯し(コントローラーのディスプレイオフコマンド)、次の操作で
   点灯します。消灯中の変化は描画だけ行って点灯しないので、誰も見ていない
@@ -255,8 +255,8 @@ IQS7211E などのタッチコントローラーは、データがあると読�
   そこで再描画を止めてパネルを消灯します。2 つの経路はデバイスを逆の順序で
   サスペンドし(`&soft_off` は初期化順、アイドルスリープはその逆)、消灯には
   パネルのバスが必要なので、バスの前後に 1 つずつ置きます。バスより前が
-  `CONFIG_ZMK_DISPLAY_042INCH_PM_INIT_PRIORITY`、後が
-  `CONFIG_ZMK_DISPLAY_042INCH_PM_LATE_INIT_PRIORITY` です。先に動いた方が消灯し、
+  `CONFIG_ZMK_DISPLAY_72X40_PM_INIT_PRIORITY`、後が
+  `CONFIG_ZMK_DISPLAY_72X40_PM_LATE_INIT_PRIORITY` です。先に動いた方が消灯し、
   もう一方は消灯済みのパネルに触れません。
 - 起動時は、ドライバの準備ができた時点でパネルを消去するので、コントローラー
   のメモリーに残った内容は表示されません。
@@ -268,16 +268,16 @@ IQS7211E などのタッチコントローラーは、データがあると読�
 
 | 設定 | 設定関数 | 既定値 |
 | --- | --- | --- |
-| パネルの消灯タイマー | `zmk_display_042inch_set_blank_after_ms()` | `CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS` |
-| コントラスト(0-255) | `zmk_display_042inch_set_contrast()` | ノードの `contrast`、なければドライバの値 |
+| パネルの消灯タイマー | `zmk_display_72x40_set_blank_after_ms()` | `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` |
+| コントラスト(0-255) | `zmk_display_72x40_set_contrast()` | ノードの `contrast`、なければドライバの値 |
 
-設定関数(`zmk-display-042inch/display_042inch.h`)はどのスレッドから呼んでも安全
+設定関数(`zmk-display-72x40/display_72x40.h`)はどのスレッドから呼んでも安全
 です。値を記録してモジュール自身の処理を予約するだけで、パネルに書き込むのは
 その処理だけなので、変更も他の書き込みと同じく同期デバイスの読み取りを避けて
 送られます。どちらもすぐに反映されます。新しいタイマーは最後のキー操作から
 計り直し、`0` にすると以前のタイマーで消灯したパネルが点灯します。
 
-`CONFIG_ZMK_DISPLAY_042INCH_CUSTOM_SETTINGS=y` にすると、Studio クライアントが
+`CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS=y` にすると、Studio クライアントが
 [zmk-feature-custom-settings](https://github.com/cormoran/zmk-feature-custom-settings)
 を通して `amgskobo__display` の見出しの下で編集できます。キーは
 `display.blank_after_s`(秒、0-600、0 で無効)と `display.contrast` です。
@@ -293,14 +293,14 @@ upstream ZMK の `main` と、DYA Studio フォーク(`cormoran/zmk` の `main+d
 
 - `tests/run.sh` は描画コアをホストで厳しい警告付き、最適化ありと ASan/UBSan
   付きでビルドし、レイアウト・フォント・変化区間の検出を確認し、生成済みの
-  フォントヘッダーがソースと一致することも確認します。`D042_TEST_DUMP=1` で
+  フォントヘッダーがソースと一致することも確認します。`D72X40_TEST_DUMP=1` で
   テストが描いたフレームを表示します。
 - `tests/run-integration-docker.sh upstream|dya` は XIAO BLE と SSD1306 の
   ファームウェアをビルドし、記録用ディスプレイに対して ZMK のイベントを流す
   native_sim テストで、パネルに届く内容を確認します。
 
 フォントは `scripts/font5x7.txt` にあり、`scripts/gen_font.py` がそこから
-`include/zmk-display-042inch/display_042inch_font.h` を生成します。
+`include/zmk-display-72x40/display_72x40_font.h` を生成します。
 
 ## License
 

@@ -1,9 +1,9 @@
 # Copyright (c) 2026 amgskobo
 # SPDX-License-Identifier: MIT
 #
-# The 5x7 glyphs of zmk-display-042inch, drawn by hand for this module.
+# The 5x7 glyphs of zmk-display-72x40, drawn by hand for this module.
 # scripts/gen_font.py turns this file into
-# include/zmk-display-042inch/display_042inch_font.h; edit this file and rerun
+# include/zmk-display-72x40/display_72x40_font.h; edit this file and rerun
 # the script rather than editing the header.
 #
 # Each glyph is a "== <code>" line followed by seven rows of five cells,

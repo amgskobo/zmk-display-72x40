@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 amgskobo
 # SPDX-License-Identifier: MIT
-"""Turn scripts/font5x7.txt into include/zmk-display-042inch/display_042inch_font.h.
+"""Turn scripts/font5x7.txt into include/zmk-display-72x40/display_72x40_font.h.
 
 Each glyph becomes five column bytes. Bit r of a column is row r, the top row
 being bit 0, which is how a page-tiled monochrome controller (SSD1306 and
@@ -16,7 +16,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "scripts" / "font5x7.txt"
-HEADER = ROOT / "include" / "zmk-display-042inch" / "display_042inch_font.h"
+HEADER = ROOT / "include" / "zmk-display-72x40" / "display_72x40_font.h"
 
 WIDTH = 5
 HEIGHT = 7
@@ -99,21 +99,21 @@ def render(glyphs, labels):
         "",
         "#include <stdint.h>",
         "",
-        f"#define D042_FONT_WIDTH {WIDTH}",
-        f"#define D042_FONT_HEIGHT {HEIGHT}",
-        f"#define D042_FONT_SYMBOL_COUNT {SYMBOL_COUNT}",
-        f"#define D042_FONT_ASCII_FIRST 0x{ASCII_FIRST:02x}",
-        f"#define D042_FONT_ASCII_LAST 0x{ASCII_LAST:02x}",
+        f"#define D72X40_FONT_WIDTH {WIDTH}",
+        f"#define D72X40_FONT_HEIGHT {HEIGHT}",
+        f"#define D72X40_FONT_SYMBOL_COUNT {SYMBOL_COUNT}",
+        f"#define D72X40_FONT_ASCII_FIRST 0x{ASCII_FIRST:02x}",
+        f"#define D72X40_FONT_ASCII_LAST 0x{ASCII_LAST:02x}",
         "",
         "/* The module's own symbols, addressed by the control codes below 0x20. */",
-        "static const uint8_t d042_font_symbols[D042_FONT_SYMBOL_COUNT][D042_FONT_WIDTH] = {",
+        "static const uint8_t d72x40_font_symbols[D72X40_FONT_SYMBOL_COUNT][D72X40_FONT_WIDTH] = {",
     ]
     out += [row(code) for code in range(SYMBOL_COUNT)]
     out += [
         "};",
         "",
         "static const uint8_t",
-        "    d042_font_ascii[D042_FONT_ASCII_LAST - D042_FONT_ASCII_FIRST + 1][D042_FONT_WIDTH] = {",
+        "    d72x40_font_ascii[D72X40_FONT_ASCII_LAST - D72X40_FONT_ASCII_FIRST + 1][D72X40_FONT_WIDTH] = {",
     ]
     out += [row(code) for code in range(ASCII_FIRST, ASCII_LAST + 1)]
     out += ["};", ""]

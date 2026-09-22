@@ -15,7 +15,7 @@
 
 #include <zmk/event_manager.h>
 
-struct zmk_display_042inch_power_state_changed {
+struct zmk_display_72x40_power_state_changed {
     /*
      * ZMK_RELAY_EVENT_SOURCE_SELF on the half that raises it, and the
      * peripheral's source id plus one (0 would be the central) once the
@@ -25,4 +25,4 @@ struct zmk_display_042inch_power_state_changed {
     bool powered;
 };
 
-ZMK_EVENT_DECLARE(zmk_display_042inch_power_state_changed);
+ZMK_EVENT_DECLARE(zmk_display_72x40_power_state_changed);

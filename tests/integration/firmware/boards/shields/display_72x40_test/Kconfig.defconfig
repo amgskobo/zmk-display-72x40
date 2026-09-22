@@ -1,10 +1,10 @@
 # Copyright (c) 2026 amgskobo
 # SPDX-License-Identifier: MIT
 
-if SHIELD_DISPLAY_042INCH_TEST
+if SHIELD_DISPLAY_72X40_TEST
 
 config ZMK_KEYBOARD_NAME
-    default "Display 0.42-inch"
+    default "Display 72x40"
 
 # A split central, so that the peripheral battery line is built too.
 config ZMK_SPLIT

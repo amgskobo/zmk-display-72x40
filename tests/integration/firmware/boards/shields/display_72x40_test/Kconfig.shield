@@ -1,0 +1,5 @@
+# Copyright (c) 2026 amgskobo
+# SPDX-License-Identifier: MIT
+
+config SHIELD_DISPLAY_72X40_TEST
+    def_bool $(shields_list_contains,display_72x40_test)

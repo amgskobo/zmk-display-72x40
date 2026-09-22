@@ -1,6 +1,6 @@
-# ZMK Display 0.42-inch
+# ZMK Display 72x40
 
-[![Test](https://github.com/amgskobo/zmk-display-0.42inch/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-0.42inch/actions/workflows/test.yml)
+[![Test](https://github.com/amgskobo/zmk-display-72x40/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-72x40/actions/workflows/test.yml)
 
 [日本語](README_JA.md)
 
@@ -43,16 +43,16 @@ In the consuming config's `config/west.yml`:
     - name: amgskobo
       url-base: https://github.com/amgskobo
   projects:
-- name: zmk-display-0.42inch
+- name: zmk-display-72x40
   remote: amgskobo
   revision: main
-  path: zmk-display-042inch
+  path: zmk-display-72x40
 ```
 
 ### 2. Describe the panel
 
 Any Zephyr display that stores 8-pixel pages (`SCREEN_INFO_MONO_VTILED`)
-works. A 0.42-inch 72x40 SSD1306 on I2C, for example:
+works. A 72x40 72x40 SSD1306 on I2C, for example:
 
 ```dts
 &i2c1 {
@@ -82,7 +82,7 @@ On a unibody keyboard or a split central (the half with the keymap):
 ```dts
 / {
     status_panel {
-        compatible = "zmk,display-042inch";
+        compatible = "zmk,display-72x40";
         display = <&oled>;
         /* optional */
         hidden-layers = <6 7 8>;
@@ -93,7 +93,7 @@ On a unibody keyboard or a split central (the half with the keymap):
 };
 ```
 
-The node enables `CONFIG_ZMK_DISPLAY_042INCH`, which selects the display driver
+The node enables `CONFIG_ZMK_DISPLAY_72X40`, which selects the display driver
 subsystem. Leave `CONFIG_ZMK_DISPLAY` (ZMK's LVGL display) off: both would own
 the same panel, so the module is not built while it is on.
 
@@ -110,20 +110,20 @@ the same panel, so the module is not built while it is on.
 
 | Kconfig | Default | Meaning |
 | --- | --- | --- |
-| `CONFIG_ZMK_DISPLAY_042INCH_CUSTOM_SETTINGS` | `n` | Publish the settings below to a Studio client (needs zmk-feature-custom-settings). |
-| `CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS` | `30000` | The panel's timeout: dark this long after the last key, encoder or pointer report; `0` for none. |
-| `CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS` | `20` | Gathers a burst of changes into one redraw. |
-| `CONFIG_ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS` | `50` | How long the sync device counts as reporting after a report. |
-| `CONFIG_ZMK_DISPLAY_042INCH_RETRY_MS` | `1000` | Delay before a failed write is retried (three times). |
-| `CONFIG_ZMK_DISPLAY_042INCH_PEER_POWER` | `y` | Draw the bolt for a peripheral on external power (needs the split relay). |
-| `CONFIG_ZMK_DISPLAY_042INCH_POWER_REPORTER` | `y` | Built on a split peripheral: tells the central about its own power. |
-| `CONFIG_ZMK_DISPLAY_042INCH_POWER_POLL_MS` | `2000` | How often that peripheral looks at its VBUS line. |
-| `CONFIG_ZMK_DISPLAY_042INCH_RESET_INIT_PRIORITY` | `84` | POST_KERNEL priority of the reset pulse; before the display driver. |
-| `CONFIG_ZMK_DISPLAY_042INCH_RESET_PULSE_MS` | `10` | How long the reset line is held low. |
-| `CONFIG_ZMK_DISPLAY_042INCH_RESET_SETTLE_MS` | `50` | How long to wait after releasing it. |
-| `CONFIG_ZMK_DISPLAY_042INCH_INIT_PRIORITY` | `86` | POST_KERNEL priority of the boot-time panel clear; after the display driver. |
-| `CONFIG_ZMK_DISPLAY_042INCH_PM_INIT_PRIORITY` | `45` | POST_KERNEL priority of the power-off device for `&soft_off`; before the panel's bus. |
-| `CONFIG_ZMK_DISPLAY_042INCH_PM_LATE_INIT_PRIORITY` | `55` | The same for idle sleep, which suspends in reverse order; after the panel's bus. |
+| `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS` | `n` | Publish the settings below to a Studio client (needs zmk-feature-custom-settings). |
+| `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` | `30000` | The panel's timeout: dark this long after the last key, encoder or pointer report; `0` for none. |
+| `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` | `20` | Gathers a burst of changes into one redraw. |
+| `CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS` | `50` | How long the sync device counts as reporting after a report. |
+| `CONFIG_ZMK_DISPLAY_72X40_RETRY_MS` | `1000` | Delay before a failed write is retried (three times). |
+| `CONFIG_ZMK_DISPLAY_72X40_PEER_POWER` | `y` | Draw the bolt for a peripheral on external power (needs the split relay). |
+| `CONFIG_ZMK_DISPLAY_72X40_POWER_REPORTER` | `y` | Built on a split peripheral: tells the central about its own power. |
+| `CONFIG_ZMK_DISPLAY_72X40_POWER_POLL_MS` | `2000` | How often that peripheral looks at its VBUS line. |
+| `CONFIG_ZMK_DISPLAY_72X40_RESET_INIT_PRIORITY` | `84` | POST_KERNEL priority of the reset pulse; before the display driver. |
+| `CONFIG_ZMK_DISPLAY_72X40_RESET_PULSE_MS` | `10` | How long the reset line is held low. |
+| `CONFIG_ZMK_DISPLAY_72X40_RESET_SETTLE_MS` | `50` | How long to wait after releasing it. |
+| `CONFIG_ZMK_DISPLAY_72X40_INIT_PRIORITY` | `86` | POST_KERNEL priority of the boot-time panel clear; after the display driver. |
+| `CONFIG_ZMK_DISPLAY_72X40_PM_INIT_PRIORITY` | `45` | POST_KERNEL priority of the power-off device for `&soft_off`; before the panel's bus. |
+| `CONFIG_ZMK_DISPLAY_72X40_PM_LATE_INIT_PRIORITY` | `55` | The same for idle sleep, which suspends in reverse order; after the panel's bus. |
 
 ## What the panel shows
 
@@ -143,7 +143,7 @@ The frame lives in RAM in the controller's own layout, one byte per column
 per page (360 bytes for 72x40), next to a copy of what the panel shows.
 
 1. A subscribed event sets a flag and schedules one pass on ZMK's
-   low-priority work queue, `CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS` later. A
+   low-priority work queue, `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` later. A
    layer event for a hidden layer returns before that.
 2. The pass reads the state and draws the whole frame. That is a few thousand
    instructions, so no drawing state is kept between passes.
@@ -172,13 +172,13 @@ firmware start.
 
 It goes on this node rather than on the panel's own for a reason. Zephyr's
 SSD1306 driver, given `reset-gpios`, releases the line and sends its first
-command immediately; a panel that answers that with a NACK - the 0.42-inch
+command immediately; a panel that answers that with a NACK - the 72x40
 72x40 modules do - fails the driver's init with `-EIO`, and the display stays
 dark for good, because nothing retries it. This module instead pulses the
-line before that driver runs (`CONFIG_ZMK_DISPLAY_042INCH_RESET_INIT_PRIORITY`,
+line before that driver runs (`CONFIG_ZMK_DISPLAY_72X40_RESET_INIT_PRIORITY`,
 below `CONFIG_DISPLAY_INIT_PRIORITY`), holds it for
-`CONFIG_ZMK_DISPLAY_042INCH_RESET_PULSE_MS` and then waits
-`CONFIG_ZMK_DISPLAY_042INCH_RESET_SETTLE_MS`, so the driver meets a controller
+`CONFIG_ZMK_DISPLAY_72X40_RESET_PULSE_MS` and then waits
+`CONFIG_ZMK_DISPLAY_72X40_RESET_SETTLE_MS`, so the driver meets a controller
 that has finished starting up. Leave the panel's own node without a reset
 pin.
 
@@ -202,11 +202,11 @@ The central knows when it is plugged in, so its own line gets the bolt for
 free. A split peripheral does not: it has no USB stack - it cannot expose USB
 HID - so nothing in ZMK tells it, or the central, where its power comes from.
 
-`CONFIG_ZMK_DISPLAY_042INCH_POWER_REPORTER`, built on the peripheral instead of
+`CONFIG_ZMK_DISPLAY_72X40_POWER_REPORTER`, built on the peripheral instead of
 the panel, reads the SoC's USB VBUS detection directly (one register bit on an
 nRF with a USB peripheral, available whether or not the USB stack is built),
-every `CONFIG_ZMK_DISPLAY_042INCH_POWER_POLL_MS`. A change goes to the central
-over the fork's split relay, and `CONFIG_ZMK_DISPLAY_042INCH_PEER_POWER` draws it
+every `CONFIG_ZMK_DISPLAY_72X40_POWER_POLL_MS`. A change goes to the central
+over the fork's split relay, and `CONFIG_ZMK_DISPLAY_72X40_PEER_POWER` draws it
 as the bolt beside that half's battery level.
 
 A link is reported up before the central has subscribed to the peripheral's
@@ -229,7 +229,7 @@ delays that read, and its STOP may close the window early.
 
 With `sync-input-device` pointing at such a controller, the module watches
 its input reports. While the controller has reported within
-`CONFIG_ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS`, every panel write waits for the next
+`CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS`, every panel write waits for the next
 report and goes out right after it, one write per report: the controller's
 read has just finished and its next sample is a report period away. A redraw
 then takes one report per changed run, a handful for a change to every line.
@@ -243,7 +243,7 @@ moving a finger changes nothing on the panel and nothing is sent at all.
 
 ## Power
 
-- `CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS`, 30 seconds by default, switches
+- `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS`, 30 seconds by default, switches
   the panel off (the controller's display-off command) that long after the
   last key press, encoder turn or pointer report - the inputs ZMK's idle
   timeout counts - and the next one switches it back on. What changes while
@@ -262,8 +262,8 @@ moving a finger changes nothing on the panel and nothing is sent at all.
   the panel off. The two paths suspend devices in opposite orders -
   `&soft_off` in init order, idle sleep in reverse - and switching the panel
   off needs its bus, so there is one device either side of the bus:
-  `CONFIG_ZMK_DISPLAY_042INCH_PM_INIT_PRIORITY` before it and
-  `CONFIG_ZMK_DISPLAY_042INCH_PM_LATE_INIT_PRIORITY` after it. Whichever runs
+  `CONFIG_ZMK_DISPLAY_72X40_PM_INIT_PRIORITY` before it and
+  `CONFIG_ZMK_DISPLAY_72X40_PM_LATE_INIT_PRIORITY` after it. Whichever runs
   first switches the panel off; the other finds it dark and leaves it.
 - At boot the panel is cleared as soon as its driver is up, so the
   controller's leftover memory is never shown.
@@ -275,17 +275,17 @@ time value:
 
 | Setting | Setter | Default |
 | --- | --- | --- |
-| The panel's blank timeout | `zmk_display_042inch_set_blank_after_ms()` | `CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS` |
-| Contrast, 0-255 | `zmk_display_042inch_set_contrast()` | the node's `contrast`, or the driver's |
+| The panel's blank timeout | `zmk_display_72x40_set_blank_after_ms()` | `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` |
+| Contrast, 0-255 | `zmk_display_72x40_set_contrast()` | the node's `contrast`, or the driver's |
 
-The setters (`zmk-display-042inch/display_042inch.h`) are safe from any thread: they
+The setters (`zmk-display-72x40/display_72x40.h`) are safe from any thread: they
 record the value and schedule the module's own work, which stays the one thing
 that writes to the panel, so a change is sent clear of the sync device's reads
 like any other write. Each takes effect at once - a new timeout is measured
 from the last key, and a timeout of zero lights a panel the old one had
 darkened.
 
-With `CONFIG_ZMK_DISPLAY_042INCH_CUSTOM_SETTINGS=y` a Studio client edits them
+With `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS=y` a Studio client edits them
 through [zmk-feature-custom-settings](https://github.com/cormoran/zmk-feature-custom-settings),
 under the `amgskobo__display` heading: `display.blank_after_s` (seconds,
 0-600, 0 for none) and `display.contrast`. The keys have a
@@ -302,13 +302,13 @@ ZMK's public event and state functions.
 - `tests/run.sh` builds the drawing core on the host with strict warnings,
   optimised and under ASan/UBSan, checks the layout, the font and the run
   finder, and checks that the generated font header matches its source. Set
-  `D042_TEST_DUMP=1` to print the frames the tests draw.
+  `D72X40_TEST_DUMP=1` to print the frames the tests draw.
 - `tests/run-integration-docker.sh upstream|dya` builds a firmware fixture
   with an SSD1306 on a XIAO BLE and runs a native_sim test that drives ZMK
   events against a recording display and checks what reaches the panel.
 
 The font lives in `scripts/font5x7.txt`; `scripts/gen_font.py` regenerates
-`include/zmk-display-042inch/display_042inch_font.h` from it.
+`include/zmk-display-72x40/display_72x40_font.h` from it.
 
 ## License
 

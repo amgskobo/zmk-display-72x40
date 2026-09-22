@@ -2,7 +2,7 @@
  * Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * A 0.42-inch 72x40 SSD1306 on the XIAO's I2C pins, sharing the bus with an
+ * A 72x40 72x40 SSD1306 on the XIAO's I2C pins, sharing the bus with an
  * input device, as the module is meant to be used.
  */
 
@@ -31,43 +31,43 @@
 
 / {
     chosen {
-        zmk,kscan = &display_042inch_test_kscan;
-        zmk,physical-layout = &display_042inch_test_layout;
+        zmk,kscan = &display_72x40_test_kscan;
+        zmk,physical-layout = &display_72x40_test_layout;
     };
 
-    display_042inch_test_kscan: display_042inch_test_kscan {
+    display_72x40_test_kscan: display_72x40_test_kscan {
         compatible = "zmk,kscan-gpio-matrix";
         diode-direction = "col2row";
         row-gpios = <&gpio0 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
         col-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
     };
 
-    display_042inch_test_transform: display_042inch_test_transform {
+    display_72x40_test_transform: display_72x40_test_transform {
         compatible = "zmk,matrix-transform";
         rows = <1>;
         columns = <1>;
         map = <RC(0, 0)>;
     };
 
-    display_042inch_test_layout: display_042inch_test_layout {
+    display_72x40_test_layout: display_72x40_test_layout {
         compatible = "zmk,physical-layout";
-        display-name = "Display 0.42-inch test";
-        transform = <&display_042inch_test_transform>;
+        display-name = "Display 72x40 test";
+        transform = <&display_72x40_test_transform>;
         keys = <&key_physical_attrs 100 100 0 0 0 0 0>;
     };
 
     /* Stands in for a touch controller on the same bus. */
-    display_042inch_test_pad: display_042inch_test_pad {
+    display_72x40_test_pad: display_72x40_test_pad {
         compatible = "zmk,input-mock";
         event-period = <100>;
         events = <>;
     };
 
     status_panel {
-        compatible = "zmk,display-042inch";
+        compatible = "zmk,display-72x40";
         display = <&oled>;
         hidden-layers = <2>;
-        sync-input-device = <&display_042inch_test_pad>;
+        sync-input-device = <&display_72x40_test_pad>;
         contrast = <128>;
         /* Built turned on its side, so the projection is compiled too. */
         rotation = <90>;
