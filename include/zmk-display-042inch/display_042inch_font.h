@@ -12,14 +12,14 @@
 
 #include <stdint.h>
 
-#define DL_FONT_WIDTH 5
-#define DL_FONT_HEIGHT 7
-#define DL_FONT_SYMBOL_COUNT 7
-#define DL_FONT_ASCII_FIRST 0x20
-#define DL_FONT_ASCII_LAST 0x7e
+#define D042_FONT_WIDTH 5
+#define D042_FONT_HEIGHT 7
+#define D042_FONT_SYMBOL_COUNT 7
+#define D042_FONT_ASCII_FIRST 0x20
+#define D042_FONT_ASCII_LAST 0x7e
 
 /* The module's own symbols, addressed by the control codes below 0x20. */
-static const uint8_t dl_font_symbols[DL_FONT_SYMBOL_COUNT][DL_FONT_WIDTH] = {
+static const uint8_t d042_font_symbols[D042_FONT_SYMBOL_COUNT][D042_FONT_WIDTH] = {
     {0x00, 0x00, 0x00, 0x00, 0x00}, /* 0x00 blank */
     {0x10, 0x20, 0x10, 0x08, 0x06}, /* 0x01 check */
     {0x22, 0x14, 0x08, 0x14, 0x22}, /* 0x02 cross */
@@ -30,7 +30,7 @@ static const uint8_t dl_font_symbols[DL_FONT_SYMBOL_COUNT][DL_FONT_WIDTH] = {
 };
 
 static const uint8_t
-    dl_font_ascii[DL_FONT_ASCII_LAST - DL_FONT_ASCII_FIRST + 1][DL_FONT_WIDTH] = {
+    d042_font_ascii[D042_FONT_ASCII_LAST - D042_FONT_ASCII_FIRST + 1][D042_FONT_WIDTH] = {
     {0x00, 0x00, 0x00, 0x00, 0x00}, /* 0x20 ' ' */
     {0x00, 0x00, 0x5f, 0x00, 0x00}, /* 0x21 '!' */
     {0x00, 0x07, 0x00, 0x07, 0x00}, /* 0x22 '"' */

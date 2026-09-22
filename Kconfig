@@ -1,11 +1,11 @@
 # Copyright (c) 2026 amgskobo
 # SPDX-License-Identifier: MIT
 
-DT_COMPAT_ZMK_DISPLAY_LITE := zmk,display-lite
+DT_COMPAT_ZMK_DISPLAY_042INCH := zmk,display-042inch
 
-config ZMK_DISPLAY_LITE
+config ZMK_DISPLAY_042INCH
     bool "Low-cost status panel without LVGL"
-    default $(dt_compat_enabled,$(DT_COMPAT_ZMK_DISPLAY_LITE))
+    default $(dt_compat_enabled,$(DT_COMPAT_ZMK_DISPLAY_042INCH))
     # Both would own the same panel. ZMK's display runs LVGL and a 10 ms tick
     # while the keyboard is active; this module replaces it rather than
     # joining it.
@@ -31,11 +31,11 @@ config ZMK_DISPLAY_LITE
       set, writes on a bus shared with an input device are placed right after
       that device's reports.
 
-      Enabled by a zmk,display-lite devicetree node.
+      Enabled by a zmk,display-042inch devicetree node.
 
-if ZMK_DISPLAY_LITE
+if ZMK_DISPLAY_042INCH
 
-config ZMK_DISPLAY_LITE_BLANK_AFTER_MS
+config ZMK_DISPLAY_042INCH_BLANK_AFTER_MS
     int "Switch the panel off this long after the last key, encoder or pointer (ms)"
     default 30000
     range 0 600000
@@ -53,7 +53,7 @@ config ZMK_DISPLAY_LITE_BLANK_AFTER_MS
       not, so a keyboard left alone stops lighting the panel for a battery
       reading no one reads. A dark panel draws microamps.
 
-config ZMK_DISPLAY_LITE_CUSTOM_SETTINGS
+config ZMK_DISPLAY_042INCH_CUSTOM_SETTINGS
     bool "Publish the panel's settings through zmk-feature-custom-settings"
     # Not ZMK_CUSTOM_SETTINGS: registering a subsystem needs zmk/studio/custom.h,
     # which includes ZMK's nanopb-generated proto/zmk/custom.pb.h, generated only
@@ -65,19 +65,19 @@ config ZMK_DISPLAY_LITE_CUSTOM_SETTINGS
       cross-module custom settings registry, so a Studio client lists and
       edits them under the amgskobo__display heading with no page of its
       own. The defaults are the build's own values:
-      ZMK_DISPLAY_LITE_BLANK_AFTER_MS and the node's contrast property.
+      ZMK_DISPLAY_042INCH_BLANK_AFTER_MS and the node's contrast property.
 
       Needs zmk-feature-custom-settings, and so the patched ZMK that carries
       the custom Studio RPC protocol. Off, which is the default and what an
       upstream ZMK build gets, none of it is compiled; the setters in
-      display_lite.h still work.
+      display_042inch.h still work.
 
-config ZMK_DISPLAY_LITE_UPDATE_DELAY_MS
+config ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS
     int "Delay that gathers a burst of changes into one redraw (ms)"
     default 20
     range 0 1000
 
-config ZMK_DISPLAY_LITE_SYNC_WINDOW_MS
+config ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS
     int "How long sync-input-device counts as reporting after a report (ms)"
     default 50
     range 1 1000
@@ -88,7 +88,7 @@ config ZMK_DISPLAY_LITE_SYNC_WINDOW_MS
       enough that a panel update after the last report is not held back
       noticeably.
 
-config ZMK_DISPLAY_LITE_RETRY_MS
+config ZMK_DISPLAY_042INCH_RETRY_MS
     int "Delay before a failed panel write is retried (ms)"
     default 1000
     range 10 60000
@@ -96,19 +96,19 @@ config ZMK_DISPLAY_LITE_RETRY_MS
       A failed write is retried three times at this interval, then left until
       the next change the panel shows.
 
-config ZMK_DISPLAY_LITE_PEER_POWER
+config ZMK_DISPLAY_042INCH_PEER_POWER
     bool "Show whether the split peripheral is on external power"
     default y
     depends on ZMK_SPLIT_RELAY_EVENT
     help
       Draws a bolt beside the peripheral's battery level while that half is
       plugged in, from what its own power reporter relays (see
-      ZMK_DISPLAY_LITE_POWER_REPORTER, which the peripheral's build needs).
+      ZMK_DISPLAY_042INCH_POWER_REPORTER, which the peripheral's build needs).
       ZMK itself carries a peripheral's battery level but not its power
       source, so this rides the fork's split relay; without the relay there
       is nothing to listen to and the bolt is left out.
 
-config ZMK_DISPLAY_LITE_RESET_INIT_PRIORITY
+config ZMK_DISPLAY_042INCH_RESET_INIT_PRIORITY
     int "Init priority of the panel reset pulse"
     default 84
     help
@@ -116,12 +116,12 @@ config ZMK_DISPLAY_LITE_RESET_INIT_PRIORITY
       before the display driver (CONFIG_DISPLAY_INIT_PRIORITY), so that the
       driver finds a controller that has finished starting up.
 
-config ZMK_DISPLAY_LITE_RESET_PULSE_MS
+config ZMK_DISPLAY_042INCH_RESET_PULSE_MS
     int "How long the panel's reset line is held low (ms)"
     default 10
     range 1 1000
 
-config ZMK_DISPLAY_LITE_RESET_SETTLE_MS
+config ZMK_DISPLAY_042INCH_RESET_SETTLE_MS
     int "How long to wait after releasing the panel's reset line (ms)"
     default 50
     range 1 1000
@@ -129,7 +129,7 @@ config ZMK_DISPLAY_LITE_RESET_SETTLE_MS
       An SSD1306 answers with a NACK for a while after reset, and a driver
       that sends its first command straight away fails for good.
 
-config ZMK_DISPLAY_LITE_INIT_PRIORITY
+config ZMK_DISPLAY_042INCH_INIT_PRIORITY
     int "Init priority of the boot-time panel clear"
     default 86
     help
@@ -137,7 +137,7 @@ config ZMK_DISPLAY_LITE_INIT_PRIORITY
       no leftover controller memory. It must come after the display driver
       (CONFIG_DISPLAY_INIT_PRIORITY) and after ZMK's low-priority work queue.
 
-config ZMK_DISPLAY_LITE_PM_INIT_PRIORITY
+config ZMK_DISPLAY_042INCH_PM_INIT_PRIORITY
     int "Init priority of the power-management device before the bus"
     default 45
     help
@@ -146,7 +146,7 @@ config ZMK_DISPLAY_LITE_PM_INIT_PRIORITY
       devices in init order, so this must come before the panel's bus (I2C or
       SPI) for the bus to still work when the panel is switched off.
 
-config ZMK_DISPLAY_LITE_PM_LATE_INIT_PRIORITY
+config ZMK_DISPLAY_042INCH_PM_LATE_INIT_PRIORITY
     int "Init priority of the power-management device after the bus"
     default 55
     help
@@ -155,9 +155,9 @@ config ZMK_DISPLAY_LITE_PM_LATE_INIT_PRIORITY
       of the two runs first finds the bus up and switches the panel off; the
       other finds it dark and leaves it alone.
 
-endif # ZMK_DISPLAY_LITE
+endif # ZMK_DISPLAY_042INCH
 
-config ZMK_DISPLAY_LITE_POWER_REPORTER
+config ZMK_DISPLAY_042INCH_POWER_REPORTER
     bool "Tell the central when this peripheral is on external power"
     default y
     depends on ZMK_SPLIT && !ZMK_SPLIT_ROLE_CENTRAL && ZMK_SPLIT_RELAY_EVENT
@@ -171,8 +171,8 @@ config ZMK_DISPLAY_LITE_POWER_REPORTER
       with a USB peripheral; turn it off to save the poll on a keyboard whose
       central has no panel.
 
-config ZMK_DISPLAY_LITE_POWER_POLL_MS
+config ZMK_DISPLAY_042INCH_POWER_POLL_MS
     int "How often the peripheral looks at its USB VBUS line (ms)"
     default 2000
     range 100 60000
-    depends on ZMK_DISPLAY_LITE_POWER_REPORTER
+    depends on ZMK_DISPLAY_042INCH_POWER_REPORTER

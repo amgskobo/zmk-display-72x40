@@ -2,7 +2,7 @@
  * Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * Host tests for the drawing core. Set DL_TEST_DUMP=1 to print every frame
+ * Host tests for the drawing core. Set D042_TEST_DUMP=1 to print every frame
  * the tests draw as text.
  */
 
@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <zmk-display-lite/display_lite_core.h>
+#include <zmk-display-042inch/display_042inch_core.h>
 
 static int failures;
 
@@ -27,26 +27,26 @@ static int failures;
 
 struct frame {
     uint8_t buf[MAX_WIDTH * MAX_PAGES];
-    struct dl_canvas cv;
+    struct d042_canvas cv;
 };
 
 static void frame_init(struct frame *f, uint16_t width, uint16_t pages) {
     memset(f->buf, 0, sizeof(f->buf));
-    f->cv = (struct dl_canvas){.buf = f->buf, .width = width, .pages = pages};
+    f->cv = (struct d042_canvas){.buf = f->buf, .width = width, .pages = pages};
 }
 
-static bool pixel(const struct dl_canvas *cv, int x, int y) {
-    uint8_t column = cv->buf[(size_t)(y / DL_PAGE_HEIGHT) * cv->width + (size_t)x];
-    return (column >> (y % DL_PAGE_HEIGHT)) & 1;
+static bool pixel(const struct d042_canvas *cv, int x, int y) {
+    uint8_t column = cv->buf[(size_t)(y / D042_PAGE_HEIGHT) * cv->width + (size_t)x];
+    return (column >> (y % D042_PAGE_HEIGHT)) & 1;
 }
 
-static void dump(const struct dl_canvas *cv, const char *title) {
-    if (getenv("DL_TEST_DUMP") == NULL) {
+static void dump(const struct d042_canvas *cv, const char *title) {
+    if (getenv("D042_TEST_DUMP") == NULL) {
         return;
     }
     printf("%s (%ux%u)\n", title, (unsigned)cv->width,
-           (unsigned)(cv->pages * DL_PAGE_HEIGHT));
-    for (int y = 0; y < cv->pages * DL_PAGE_HEIGHT; y++) {
+           (unsigned)(cv->pages * D042_PAGE_HEIGHT));
+    for (int y = 0; y < cv->pages * D042_PAGE_HEIGHT; y++) {
         for (int x = 0; x < cv->width; x++) {
             putchar(pixel(cv, x, y) ? '#' : '.');
         }
@@ -56,7 +56,7 @@ static void dump(const struct dl_canvas *cv, const char *title) {
 }
 
 /* The leftmost and rightmost lit columns within rows y0..y1. */
-static bool lit_extent(const struct dl_canvas *cv, int y0, int y1, int *first, int *last) {
+static bool lit_extent(const struct d042_canvas *cv, int y0, int y1, int *first, int *last) {
     *first = -1;
     *last = -1;
     for (int x = 0; x < cv->width; x++) {
@@ -73,7 +73,7 @@ static bool lit_extent(const struct dl_canvas *cv, int y0, int y1, int *first, i
     return *first >= 0;
 }
 
-static bool row_blank(const struct dl_canvas *cv, int y) {
+static bool row_blank(const struct d042_canvas *cv, int y) {
     for (int x = 0; x < cv->width; x++) {
         if (pixel(cv, x, y)) {
             return false;
@@ -83,24 +83,24 @@ static bool row_blank(const struct dl_canvas *cv, int y) {
 }
 
 /* True when page holds exactly the given pieces of text and nothing else. */
-static bool page_is(const struct dl_canvas *cv, int page, int x1, const char *s1, int x2,
+static bool page_is(const struct d042_canvas *cv, int page, int x1, const char *s1, int x2,
                     const char *s2) {
     struct frame expect;
     frame_init(&expect, cv->width, cv->pages);
     if (s1 != NULL) {
-        dl_text(&expect.cv, x1, page, s1);
+        d042_text(&expect.cv, x1, page, s1);
     }
     if (s2 != NULL) {
-        dl_text(&expect.cv, x2, page, s2);
+        d042_text(&expect.cv, x2, page, s2);
     }
     return memcmp(&cv->buf[(size_t)page * cv->width], &expect.buf[(size_t)page * cv->width],
                   cv->width) == 0;
 }
 
-static struct dl_status split_status(void) {
-    struct dl_status st = {
-        .transport = DL_TRANSPORT_BLE,
-        .link = DL_LINK_UP,
+static struct d042_status split_status(void) {
+    struct d042_status st = {
+        .transport = D042_TRANSPORT_BLE,
+        .link = D042_LINK_UP,
         .profile = 1,
         .battery = 85,
         .peer_battery = 72,
@@ -111,54 +111,54 @@ static struct dl_status split_status(void) {
 
 static void test_font(void) {
     for (int c = 0; c < 0x80; c++) {
-        const uint8_t *g = dl_glyph((unsigned char)c);
-        for (int col = 0; col < DL_FONT_WIDTH; col++) {
+        const uint8_t *g = d042_glyph((unsigned char)c);
+        for (int col = 0; col < D042_FONT_WIDTH; col++) {
             /* Seven rows: the eighth row of a page stays the line gap. */
             CHECK((g[col] & 0x80) == 0);
         }
     }
     int lit = 0;
-    for (int c = DL_FONT_ASCII_FIRST + 1; c <= DL_FONT_ASCII_LAST; c++) {
-        const uint8_t *g = dl_glyph((unsigned char)c);
+    for (int c = D042_FONT_ASCII_FIRST + 1; c <= D042_FONT_ASCII_LAST; c++) {
+        const uint8_t *g = d042_glyph((unsigned char)c);
         int any = 0;
-        for (int col = 0; col < DL_FONT_WIDTH; col++) {
+        for (int col = 0; col < D042_FONT_WIDTH; col++) {
             any |= g[col];
         }
         lit += any != 0;
     }
-    CHECK(lit == DL_FONT_ASCII_LAST - DL_FONT_ASCII_FIRST);
-    for (int col = 0; col < DL_FONT_WIDTH; col++) {
-        CHECK(dl_glyph(' ')[col] == 0);
+    CHECK(lit == D042_FONT_ASCII_LAST - D042_FONT_ASCII_FIRST);
+    for (int col = 0; col < D042_FONT_WIDTH; col++) {
+        CHECK(d042_glyph(' ')[col] == 0);
     }
-    CHECK(dl_glyph(0x80) == dl_glyph('?'));
-    CHECK(dl_glyph(0xff) == dl_glyph('?'));
-    CHECK(dl_glyph(0x1f) == dl_glyph('?'));
-    CHECK(dl_glyph(0x01) != dl_glyph('?'));
+    CHECK(d042_glyph(0x80) == d042_glyph('?'));
+    CHECK(d042_glyph(0xff) == d042_glyph('?'));
+    CHECK(d042_glyph(0x1f) == d042_glyph('?'));
+    CHECK(d042_glyph(0x01) != d042_glyph('?'));
 }
 
 static void test_text_width(void) {
-    CHECK(dl_text_width(0, DL_CELL) == 0);
-    CHECK(dl_text_width(1, DL_CELL) == 5);
-    CHECK(dl_text_width(12, DL_CELL) == 71);
-    CHECK(dl_text_width(1, DL_WIDE_CELL) == 10);
-    CHECK(dl_text_width(6, DL_WIDE_CELL) == 70);
+    CHECK(d042_text_width(0, D042_CELL) == 0);
+    CHECK(d042_text_width(1, D042_CELL) == 5);
+    CHECK(d042_text_width(12, D042_CELL) == 71);
+    CHECK(d042_text_width(1, D042_WIDE_CELL) == 10);
+    CHECK(d042_text_width(6, D042_WIDE_CELL) == 70);
 }
 
 static void test_tall_column(void) {
-    CHECK(dl_tall_column(0) == 0);
+    CHECK(d042_tall_column(0) == 0);
     /* The top font row becomes rows 1-2; row 0 stays blank. */
-    CHECK(dl_tall_column(0x01) == 0x0006);
+    CHECK(d042_tall_column(0x01) == 0x0006);
     /* The bottom font row becomes rows 13-14; row 15 stays blank. */
-    CHECK(dl_tall_column(0x40) == 0x6000);
-    CHECK(dl_tall_column(0x7f) == 0x7ffe);
+    CHECK(d042_tall_column(0x40) == 0x6000);
+    CHECK(d042_tall_column(0x7f) == 0x7ffe);
 }
 
 static void test_layer_wide_and_centred(void) {
     struct frame f;
     frame_init(&f, 72, 5);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
     strcpy(st.layer, "NUM");
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "NUM");
 
     int first, last;
@@ -179,10 +179,10 @@ static void test_layer_wide_and_centred(void) {
 static void test_layer_narrow_when_wide_does_not_fit(void) {
     struct frame f;
     frame_init(&f, 72, 5);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
     strcpy(st.layer, "USER-A");
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     int first, last;
     CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
     /* Six wide glyphs still fit: 70 columns. */
@@ -191,7 +191,7 @@ static void test_layer_narrow_when_wide_does_not_fit(void) {
 
     /* Too long for double size: one ordinary line, centred in the block. */
     strcpy(st.layer, "TEMP-SCROLL");
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "TEMP-SCROLL");
     CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
     /* Eleven ordinary glyphs are 65 columns. */
@@ -204,14 +204,14 @@ static void test_layer_narrow_when_wide_does_not_fit(void) {
 
     /* Too long for one line: two ordinary lines, split at the hyphen. */
     strcpy(st.layer, "TEMP-SCROLLING");
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "wrapped at the hyphen");
     CHECK(page_is(&f.cv, 0, 21, "TEMP-", 0, NULL));
     CHECK(page_is(&f.cv, 1, 9, "SCROLLING", 0, NULL));
 
     /* With no hyphen to split at, the break comes where the line ends. */
     strcpy(st.layer, "ABCDEFGHIJKLMNOPQRST");
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "wrapped and cut");
     CHECK(page_is(&f.cv, 0, 0, "ABCDEFGHIJKL", 0, NULL));
     CHECK(page_is(&f.cv, 1, 12, "MNOPQRST", 0, NULL));
@@ -219,12 +219,12 @@ static void test_layer_narrow_when_wide_does_not_fit(void) {
 
 static void test_layer_on_other_panels(void) {
     struct frame f;
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
     int first, last;
 
     strcpy(st.layer, "ABCDEFGHIJ");
     frame_init(&f, 128, 4);
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "128x32");
     CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
     /* Ten wide glyphs fit in 128: 118 columns. */
@@ -233,12 +233,12 @@ static void test_layer_on_other_panels(void) {
 
     strcpy(st.layer, "NUM");
     frame_init(&f, 72, 1);
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 0, 27, "NUM", 0, NULL));
 
     st.layer[0] = '\0';
     frame_init(&f, 72, 5);
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     CHECK(row_blank(&f.cv, 5));
     CHECK(!lit_extent(&f.cv, 0, 15, &first, &last));
 }
@@ -246,74 +246,74 @@ static void test_layer_on_other_panels(void) {
 static void test_output_line(void) {
     struct frame f;
     frame_init(&f, 72, 5);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "BASE, BLE 1 connected");
-    CHECK(page_is(&f.cv, 2, 0, DL_SYM_BLUETOOTH "1 " DL_SYM_CHECK, 0, NULL));
+    CHECK(page_is(&f.cv, 2, 0, D042_SYM_BLUETOOTH "1 " D042_SYM_CHECK, 0, NULL));
 
-    st.link = DL_LINK_DOWN;
+    st.link = D042_LINK_DOWN;
     st.profile = 3;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, DL_SYM_BLUETOOTH "3 " DL_SYM_CROSS, 0, NULL));
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 2, 0, D042_SYM_BLUETOOTH "3 " D042_SYM_CROSS, 0, NULL));
 
-    st.link = DL_LINK_OPEN;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, DL_SYM_BLUETOOTH "3 " DL_SYM_OPEN, 0, NULL));
+    st.link = D042_LINK_OPEN;
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 2, 0, D042_SYM_BLUETOOTH "3 " D042_SYM_OPEN, 0, NULL));
 
-    st.transport = DL_TRANSPORT_USB;
-    st.link = DL_LINK_UP;
-    dl_render(&f.cv, &st);
+    st.transport = D042_TRANSPORT_USB;
+    st.link = D042_LINK_UP;
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 2, 0, "USB", 0, NULL));
 
-    st.link = DL_LINK_DOWN;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, "USB " DL_SYM_CROSS, 0, NULL));
+    st.link = D042_LINK_DOWN;
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 2, 0, "USB " D042_SYM_CROSS, 0, NULL));
 
-    st.transport = DL_TRANSPORT_NONE;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, DL_SYM_CROSS, 0, NULL));
+    st.transport = D042_TRANSPORT_NONE;
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 2, 0, D042_SYM_CROSS, 0, NULL));
 
-    st.transport = DL_TRANSPORT_BLE;
-    st.link = DL_LINK_UP;
+    st.transport = D042_TRANSPORT_BLE;
+    st.link = D042_LINK_UP;
     st.profile = 1;
     st.unlocked = true;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "Studio unlocked");
-    CHECK(page_is(&f.cv, 2, 0, DL_SYM_BLUETOOTH "1 " DL_SYM_CHECK, 67, DL_SYM_UNLOCKED));
+    CHECK(page_is(&f.cv, 2, 0, D042_SYM_BLUETOOTH "1 " D042_SYM_CHECK, 67, D042_SYM_UNLOCKED));
 }
 
 static void test_battery_line(void) {
     struct frame f;
     frame_init(&f, 72, 5);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, "L 85%", 43, "R 72%"));
 
-    st.peer_battery = DL_BATTERY_UNKNOWN;
-    dl_render(&f.cv, &st);
+    st.peer_battery = D042_BATTERY_UNKNOWN;
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, "L 85%", 49, "R --"));
 
     st.charging = true;
     st.battery = 100;
     st.peer_battery = 72;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "charging");
-    CHECK(page_is(&f.cv, 3, 0, "L" DL_SYM_BOLT "100%", 43, "R 72%"));
+    CHECK(page_is(&f.cv, 3, 0, "L" D042_SYM_BOLT "100%", 43, "R 72%"));
 
     /* Both full: the spaces go so a cell still separates the halves. */
     st.peer_battery = 100;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L" DL_SYM_BOLT "100%", 43, "R100%"));
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 3, 0, "L" D042_SYM_BOLT "100%", 43, "R100%"));
     st.charging = false;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "both full");
     CHECK(page_is(&f.cv, 3, 0, "L100%", 43, "R100%"));
 
     /* Values above 100 are clamped. */
     st.battery = 180;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, "L100%", 43, "R100%"));
 
     /* The peripheral on external power gets a bolt of its own. */
@@ -321,63 +321,63 @@ static void test_battery_line(void) {
     st.battery = 85;
     st.peer_battery = 72;
     st.peer_charging = true;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "peripheral charging");
-    CHECK(page_is(&f.cv, 3, 0, "L 85%", 43, "R" DL_SYM_BOLT "72%"));
+    CHECK(page_is(&f.cv, 3, 0, "L 85%", 43, "R" D042_SYM_BOLT "72%"));
 
     /* Both charging and both full: no space left to drop, so a line each. */
     st.charging = true;
     st.battery = 100;
     st.peer_battery = 100;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "both charging and full");
-    CHECK(page_is(&f.cv, 3, 0, "L" DL_SYM_BOLT "100%", 0, NULL));
-    CHECK(page_is(&f.cv, 4, 0, "R" DL_SYM_BOLT "100%", 0, NULL));
+    CHECK(page_is(&f.cv, 3, 0, "L" D042_SYM_BOLT "100%", 0, NULL));
+    CHECK(page_is(&f.cv, 4, 0, "R" D042_SYM_BOLT "100%", 0, NULL));
 
     /* One space is enough to keep them side by side. */
     st.peer_charging = false;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L" DL_SYM_BOLT "100%", 43, "R100%"));
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 3, 0, "L" D042_SYM_BOLT "100%", 43, "R100%"));
     st.charging = false;
     st.peer_charging = false;
     st.battery = 85;
     st.peer_battery = 72;
 
     /* A central without a battery of its own shows only the peripheral's. */
-    st.battery = DL_BATTERY_HIDDEN;
+    st.battery = D042_BATTERY_HIDDEN;
     st.peer_battery = 40;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, NULL, 43, "R 40%"));
 
     /* A unibody. */
     st.battery = 9;
-    st.peer_battery = DL_BATTERY_HIDDEN;
-    dl_render(&f.cv, &st);
+    st.peer_battery = D042_BATTERY_HIDDEN;
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, "BAT 9%", 0, NULL));
     st.charging = true;
-    dl_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "BAT" DL_SYM_BOLT "9%", 0, NULL));
-    st.battery = DL_BATTERY_HIDDEN;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 3, 0, "BAT" D042_SYM_BOLT "9%", 0, NULL));
+    st.battery = D042_BATTERY_HIDDEN;
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, NULL, 0, NULL));
 }
 
 static void test_indicator_line(void) {
     struct frame f;
     frame_init(&f, 72, 5);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 4, 0, NULL, 0, NULL));
     st.caps_lock = true;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "caps lock");
     CHECK(page_is(&f.cv, 4, 0, "CAPS", 0, NULL));
 
     /* A four-page panel has no indicator line and draws nothing past it. */
     frame_init(&f, 72, 4);
     memset(f.buf, 0, sizeof(f.buf));
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     for (size_t i = 4u * 72u; i < sizeof(f.buf); i++) {
         CHECK(f.buf[i] == 0);
     }
@@ -387,10 +387,10 @@ static void test_indicator_line(void) {
 static void test_portrait_layout(void) {
     struct frame f;
     frame_init(&f, 40, 9);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
     st.caps_lock = true;
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "portrait 40x72");
 
     int first, last;
@@ -401,7 +401,7 @@ static void test_portrait_layout(void) {
     CHECK(last == 30);
     /* Nine pages for six lines: a blank line between the groups. */
     CHECK(page_is(&f.cv, 2, 0, NULL, 0, NULL));
-    CHECK(page_is(&f.cv, 3, 0, DL_SYM_BLUETOOTH "1 " DL_SYM_CHECK, 0, NULL));
+    CHECK(page_is(&f.cv, 3, 0, D042_SYM_BLUETOOTH "1 " D042_SYM_CHECK, 0, NULL));
     CHECK(page_is(&f.cv, 4, 0, NULL, 0, NULL));
     /* Too narrow for both halves side by side: one line each. */
     CHECK(page_is(&f.cv, 5, 0, "L 85%", 0, NULL));
@@ -411,16 +411,16 @@ static void test_portrait_layout(void) {
 
     /* A name too long for 40 columns takes two lines. */
     strcpy(st.layer, "TEMP-SCROLL");
-    dl_render(&f.cv, &st);
+    d042_render(&f.cv, &st);
     dump(&f.cv, "portrait, wrapped");
     CHECK(page_is(&f.cv, 0, 5, "TEMP-", 0, NULL));
     CHECK(page_is(&f.cv, 1, 2, "SCROLL", 0, NULL));
 }
 
-static int count_lit(const struct dl_canvas *cv) {
+static int count_lit(const struct d042_canvas *cv) {
     int lit = 0;
 
-    for (int y = 0; y < cv->pages * DL_PAGE_HEIGHT; y++) {
+    for (int y = 0; y < cv->pages * D042_PAGE_HEIGHT; y++) {
         for (int x = 0; x < cv->width; x++) {
             lit += pixel(cv, x, y);
         }
@@ -437,12 +437,12 @@ static void test_rotation(void) {
     frame_init(&panel, 72, 5);
     canvas.buf[0] = 1; /* canvas pixel (0, 0) */
 
-    dl_project(&canvas.cv, panel.buf, 72, 5, 90);
+    d042_project(&canvas.cv, panel.buf, 72, 5, 90);
     /* Counter-clockwise: the canvas's top-left corner goes bottom-left. */
     CHECK(pixel(&panel.cv, 0, 39));
     CHECK(count_lit(&panel.cv) == 1);
 
-    dl_project(&canvas.cv, panel.buf, 72, 5, 270);
+    d042_project(&canvas.cv, panel.buf, 72, 5, 270);
     /* Clockwise: it goes top-right. */
     CHECK(pixel(&panel.cv, 71, 0));
     CHECK(count_lit(&panel.cv) == 1);
@@ -450,20 +450,20 @@ static void test_rotation(void) {
     /* The canvas's bottom-right corner is the other corner each way. */
     memset(canvas.buf, 0, sizeof(canvas.buf));
     canvas.buf[8 * 40 + 39] = 1u << 7; /* canvas pixel (39, 71) */
-    dl_project(&canvas.cv, panel.buf, 72, 5, 90);
+    d042_project(&canvas.cv, panel.buf, 72, 5, 90);
     CHECK(pixel(&panel.cv, 71, 0));
-    dl_project(&canvas.cv, panel.buf, 72, 5, 270);
+    d042_project(&canvas.cv, panel.buf, 72, 5, 270);
     CHECK(pixel(&panel.cv, 0, 39));
 
     /* Turning keeps every pixel, and a whole status survives the turn. */
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
     strcpy(st.layer, "NUM");
-    dl_render(&canvas.cv, &st);
+    d042_render(&canvas.cv, &st);
 
     int drawn = count_lit(&canvas.cv);
 
-    dl_project(&canvas.cv, panel.buf, 72, 5, 90);
+    d042_project(&canvas.cv, panel.buf, 72, 5, 90);
     dump(&panel.cv, "portrait status turned onto the panel");
     CHECK(count_lit(&panel.cv) == drawn);
     for (int y = 0; y < 72; y++) {
@@ -477,14 +477,14 @@ static void test_rotation(void) {
     struct frame flat;
 
     frame_init(&flat, 72, 5);
-    dl_render(&flat.cv, &st);
+    d042_render(&flat.cv, &st);
     drawn = count_lit(&flat.cv);
-    dl_project(&flat.cv, panel.buf, 72, 5, 180);
+    d042_project(&flat.cv, panel.buf, 72, 5, 180);
     CHECK(count_lit(&panel.cv) == drawn);
     CHECK(pixel(&flat.cv, 3, 4) == pixel(&panel.cv, 68, 35));
 
     /* No turn at all is a copy. */
-    dl_project(&flat.cv, panel.buf, 72, 5, 0);
+    d042_project(&flat.cv, panel.buf, 72, 5, 0);
     CHECK(memcmp(flat.buf, panel.buf, 72 * 5) == 0);
 }
 
@@ -493,16 +493,16 @@ static void test_render_is_a_pure_function(void) {
     frame_init(&a, 72, 5);
     frame_init(&b, 72, 5);
     memset(b.buf, 0xa5, 72 * 5);
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
     st.unlocked = true;
     st.caps_lock = true;
-    dl_render(&a.cv, &st);
-    dl_render(&b.cv, &st);
+    d042_render(&a.cv, &st);
+    d042_render(&b.cv, &st);
     CHECK(memcmp(a.buf, b.buf, sizeof(a.buf)) == 0);
 }
 
 struct span_list {
-    struct dl_span spans[64];
+    struct d042_span spans[64];
     size_t count;
 };
 
@@ -512,12 +512,12 @@ static void collect(const uint8_t *want, const uint8_t *shown, uint16_t width, u
     uint16_t x = 0;
     out->count = 0;
     while (out->count < 64 &&
-           dl_next_span(want, shown, width, pages, valid, &page, &x, &out->spans[out->count])) {
+           d042_next_span(want, shown, width, pages, valid, &page, &x, &out->spans[out->count])) {
         out->count++;
     }
 }
 
-static bool span_is(const struct dl_span *s, uint16_t page, uint16_t x0, uint16_t x1) {
+static bool span_is(const struct d042_span *s, uint16_t page, uint16_t x0, uint16_t x1) {
     return s->page == page && s->x0 == x0 && s->x1 == x1;
 }
 
@@ -572,11 +572,11 @@ static void test_spans(void) {
 /* What the firmware does with the spans, counting the bytes it would send. */
 static size_t flush(const uint8_t *want, uint8_t *shown, uint16_t width, uint16_t pages,
                     uint32_t *valid) {
-    struct dl_span s;
+    struct d042_span s;
     uint16_t page = 0;
     uint16_t x = 0;
     size_t bytes = 0;
-    while (dl_next_span(want, shown, width, pages, *valid, &page, &x, &s)) {
+    while (d042_next_span(want, shown, width, pages, *valid, &page, &x, &s)) {
         size_t len = (size_t)(s.x1 - s.x0 + 1);
         memcpy(&shown[(size_t)s.page * width + s.x0], &want[(size_t)s.page * width + s.x0], len);
         if (len == width) {
@@ -592,22 +592,22 @@ static void test_redraw_costs(void) {
     frame_init(&want, 72, 5);
     frame_init(&shown, 72, 5);
     uint32_t valid = 0;
-    struct dl_status st = split_status();
+    struct d042_status st = split_status();
 
-    dl_render(&want.cv, &st);
+    d042_render(&want.cv, &st);
     CHECK(flush(want.buf, shown.buf, 72, 5, &valid) == 72u * 5u);
     CHECK(valid == 0x1f);
     CHECK(memcmp(want.buf, shown.buf, 72 * 5) == 0);
 
     /* Nothing changed: nothing sent. */
-    dl_render(&want.cv, &st);
+    d042_render(&want.cv, &st);
     CHECK(flush(want.buf, shown.buf, 72, 5, &valid) == 0);
 
     /* One battery digit: a glyph's worth of columns. */
     st.peer_battery = 71;
-    dl_render(&want.cv, &st);
+    d042_render(&want.cv, &st);
     size_t digit = flush(want.buf, shown.buf, 72, 5, &valid);
-    CHECK(digit > 0 && digit <= (size_t)DL_FONT_WIDTH);
+    CHECK(digit > 0 && digit <= (size_t)D042_FONT_WIDTH);
     CHECK(memcmp(want.buf, shown.buf, 72 * 5) == 0);
 
     /* A layer change stays within the two layer pages. */
@@ -615,7 +615,7 @@ static void test_redraw_costs(void) {
     frame_init(&before, 72, 5);
     memcpy(before.buf, shown.buf, sizeof(before.buf));
     strcpy(st.layer, "NUM");
-    dl_render(&want.cv, &st);
+    d042_render(&want.cv, &st);
     size_t layer = flush(want.buf, shown.buf, 72, 5, &valid);
     CHECK(layer > 0 && layer <= 2u * 72u);
     CHECK(memcmp(&before.buf[2 * 72], &shown.buf[2 * 72], 3 * 72) == 0);
@@ -642,7 +642,7 @@ int main(void) {
         return EXIT_FAILURE;
     }
 
-    printf("display_lite_core: all checks passed\n");
+    printf("display_042inch_core: all checks passed\n");
 
     return EXIT_SUCCESS;
 }

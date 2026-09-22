@@ -2,7 +2,7 @@
  * Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * Self-tests for zmk-display-lite, run inside a native_sim build. The panel
+ * Self-tests for zmk-display-042inch, run inside a native_sim build. The panel
  * is a recording display, so each test checks both what the panel ends up
  * showing and what it took to get there.
  */
@@ -26,8 +26,8 @@
 #include <zmk/events/sensor_event.h>
 #include <zmk/keymap.h>
 
-#include <zmk-display-lite/display_lite.h>
-#include <zmk-display-lite/display_lite_core.h>
+#include <zmk-display-042inch/display_042inch.h>
+#include <zmk-display-042inch/display_042inch_core.h>
 
 #include "recording_display.h"
 
@@ -36,14 +36,14 @@
 #define HIDDEN_LAYER 2
 #define UNNAMED_LAYER 3
 
-/* Past CONFIG_ZMK_DISPLAY_LITE_UPDATE_DELAY_MS, with room for the pass. */
-#define SETTLE_MS (CONFIG_ZMK_DISPLAY_LITE_UPDATE_DELAY_MS + 40)
-#define SYNC_WINDOW_MS CONFIG_ZMK_DISPLAY_LITE_SYNC_WINDOW_MS
+/* Past CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS, with room for the pass. */
+#define SETTLE_MS (CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS + 40)
+#define SYNC_WINDOW_MS CONFIG_ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS
 
 static const struct device *const sync_pad = DEVICE_DT_GET(DT_NODELABEL(sync_pad));
 
 static uint8_t expected_buf[RECORDING_PAGES * RECORDING_WIDTH];
-static const struct dl_canvas expected = {
+static const struct d042_canvas expected = {
     .buf = expected_buf,
     .width = RECORDING_WIDTH,
     .pages = RECORDING_PAGES,
@@ -62,15 +62,15 @@ static struct recording_display snapshot(void) {
  * below it stay empty.
  */
 static bool frame_is(const char *layer) {
-    struct dl_status st = {
-        .transport = DL_TRANSPORT_NONE,
-        .link = DL_LINK_DOWN,
-        .battery = DL_BATTERY_HIDDEN,
-        .peer_battery = DL_BATTERY_HIDDEN,
+    struct d042_status st = {
+        .transport = D042_TRANSPORT_NONE,
+        .link = D042_LINK_DOWN,
+        .battery = D042_BATTERY_HIDDEN,
+        .peer_battery = D042_BATTERY_HIDDEN,
     };
 
-    dl_append(st.layer, sizeof(st.layer), layer);
-    dl_render(&expected, &st);
+    d042_append(st.layer, sizeof(st.layer), layer);
+    d042_render(&expected, &st);
 
     struct recording_display *rec = recording_display_lock();
     bool same = memcmp(rec->frame, expected_buf, sizeof(expected_buf)) == 0;
@@ -175,7 +175,7 @@ static void test_dark_panel_catches_up(void) {
 
     __ASSERT(rec.on && rec.blank_on == 0 && rec.writes == 0, "ZMK's idle leaves the panel lit");
 
-    zmk_display_lite_set_blank_after_ms(200);
+    zmk_display_042inch_set_blank_after_ms(200);
     k_msleep(200 + SETTLE_MS);
     rec = snapshot();
     __ASSERT(!rec.on && rec.blank_on == 1 && rec.writes == 0, "the timeout switches it off");
@@ -196,7 +196,7 @@ static void test_dark_panel_catches_up(void) {
                     }) == 0);
     k_msleep(SETTLE_MS);
     rec = snapshot();
-    zmk_display_lite_set_blank_after_ms(0);
+    zmk_display_042inch_set_blank_after_ms(0);
     __ASSERT(rec.on && rec.blank_off == 1, "an encoder turn switches the panel on");
     __ASSERT(rec.writes > 0 && frame_is("BASE"), "the change made while dark is drawn");
 
@@ -222,7 +222,7 @@ static void test_writes_follow_the_sync_device(void) {
     k_msleep(2);
     recording_display_clear_counts();
     __ASSERT_NO_MSG(zmk_keymap_layer_activate(NUM_LAYER, false) == 0);
-    k_msleep(CONFIG_ZMK_DISPLAY_LITE_UPDATE_DELAY_MS + 10);
+    k_msleep(CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS + 10);
     __ASSERT(snapshot().writes == 0, "nothing is sent between the device's reports");
 
     /* Each report lets exactly one write through, right after it. */
@@ -251,7 +251,7 @@ static void test_writes_follow_the_sync_device(void) {
     k_msleep(2);
     recording_display_clear_counts();
     __ASSERT_NO_MSG(zmk_keymap_layer_activate(UNNAMED_LAYER, false) == 0);
-    k_msleep(CONFIG_ZMK_DISPLAY_LITE_UPDATE_DELAY_MS + 10);
+    k_msleep(CONFIG_ZMK_DISPLAY_042INCH_UPDATE_DELAY_MS + 10);
     __ASSERT(snapshot().writes == 0, "held while the device is reporting");
     k_msleep(SYNC_WINDOW_MS + 10);
     __ASSERT(frame_is("LAYER 3"), "sent once the device is quiet");
@@ -273,7 +273,7 @@ static void test_failed_write_is_retried(void) {
     recording_display_clear_counts();
 
     __ASSERT_NO_MSG(zmk_keymap_layer_activate(NUM_LAYER, false) == 0);
-    k_msleep(SETTLE_MS + 5 * CONFIG_ZMK_DISPLAY_LITE_RETRY_MS);
+    k_msleep(SETTLE_MS + 5 * CONFIG_ZMK_DISPLAY_042INCH_RETRY_MS);
 
     struct recording_display rec = snapshot();
 
@@ -300,8 +300,8 @@ static void resume_both(const struct device *first, const struct device *second)
 }
 
 static void test_suspend_switches_the_panel_off(void) {
-    const struct device *pm = device_get_binding("display_lite_pm");
-    const struct device *pm_late = device_get_binding("display_lite_pm_late");
+    const struct device *pm = device_get_binding("display_042inch_pm");
+    const struct device *pm_late = device_get_binding("display_042inch_pm_late");
 
     __ASSERT(pm != NULL && pm_late != NULL, "both power-off devices exist");
 
@@ -330,7 +330,7 @@ static void test_suspend_switches_the_panel_off(void) {
     resume_both(pm_late, pm);
 
     /* A panel already dark is left alone: its bus may be down by then. */
-    zmk_display_lite_set_blank_after_ms(100);
+    zmk_display_042inch_set_blank_after_ms(100);
     k_msleep(100 + SETTLE_MS);
     __ASSERT(!snapshot().on, "the timeout darkened the panel");
     recording_display_clear_counts();
@@ -339,16 +339,16 @@ static void test_suspend_switches_the_panel_off(void) {
     __ASSERT(rec.blank_on == 0 && rec.writes == 0, "a dark panel is not touched at power-off");
     resume_both(pm_late, pm);
     __ASSERT(!snapshot().on, "resume does not light a panel its timeout darkened");
-    zmk_display_lite_set_blank_after_ms(0);
+    zmk_display_042inch_set_blank_after_ms(0);
     k_msleep(SETTLE_MS);
     __ASSERT(snapshot().on, "switching the timeout off after resume lights it again");
 
     printk("PASS: either power-off order switches the panel off once, and a dark one not at all\n");
 }
 
-#if CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS > 0
+#if CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS > 0
 
-#define BLANK_AFTER_MS CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS
+#define BLANK_AFTER_MS CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS
 
 static void tap_key(uint32_t position) {
     for (int state = 1; state >= 0; state--) {
@@ -411,7 +411,7 @@ static void test_panel_timeout_is_its_own(void) {
            BLANK_AFTER_MS);
 }
 
-#endif /* CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS > 0 */
+#endif /* CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS > 0 */
 
 /*
  * The setters a Studio client reaches through custom settings, called directly:
@@ -421,7 +421,7 @@ static void test_settings_apply_at_run_time(void) {
     /* Contrast: sent once, and not again for the same value. */
     recording_display_lock()->contrast_set = false;
     recording_display_unlock();
-    zmk_display_lite_set_contrast(77);
+    zmk_display_042inch_set_contrast(77);
     k_msleep(SETTLE_MS);
 
     struct recording_display rec = snapshot();
@@ -429,18 +429,18 @@ static void test_settings_apply_at_run_time(void) {
     __ASSERT(rec.contrast_set && rec.contrast == 77, "a new contrast reaches the panel");
     recording_display_lock()->contrast_set = false;
     recording_display_unlock();
-    zmk_display_lite_set_contrast(77);
+    zmk_display_042inch_set_contrast(77);
     k_msleep(SETTLE_MS);
     __ASSERT(!snapshot().contrast_set, "the same contrast is not sent twice");
 
     /* The panel's own timeout, switched on and off while running. */
     report_sync();
-    zmk_display_lite_set_blank_after_ms(300);
+    zmk_display_042inch_set_blank_after_ms(300);
     k_msleep(SETTLE_MS);
     __ASSERT(snapshot().on, "a fresh report keeps it lit at first");
     k_msleep(300 + SETTLE_MS);
     __ASSERT(!snapshot().on, "the new timeout darkens it");
-    zmk_display_lite_set_blank_after_ms(0);
+    zmk_display_042inch_set_blank_after_ms(0);
     k_msleep(SETTLE_MS);
     __ASSERT(snapshot().on, "switching the timeout off lights it again");
 
@@ -455,12 +455,12 @@ static void run_tests(void *p1, void *p2, void *p3) {
     __ASSERT_NO_MSG(device_is_ready(sync_pad));
     __ASSERT(snapshot().malformed == 0, "malformed writes at boot");
 
-#if CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS > 0
+#if CONFIG_ZMK_DISPLAY_042INCH_BLANK_AFTER_MS > 0
     test_panel_timeout_is_its_own();
 
     __ASSERT(snapshot().malformed == 0, "malformed writes");
 
-    printk("display-lite runtime tests: PASS\n");
+    printk("display-042inch runtime tests: PASS\n");
     exit(0);
 #endif
 
@@ -477,10 +477,10 @@ static void run_tests(void *p1, void *p2, void *p3) {
 
     __ASSERT(snapshot().malformed == 0, "malformed writes");
 
-    printk("display-lite runtime tests: PASS\n");
+    printk("display-042inch runtime tests: PASS\n");
     exit(0);
 }
 
 /* Room for a few copies of the recording, which the tests take by value. */
-K_THREAD_DEFINE(display_lite_runtime_tests, 32768, run_tests, NULL, NULL, NULL,
+K_THREAD_DEFINE(display_042inch_runtime_tests, 32768, run_tests, NULL, NULL, NULL,
                 K_LOWEST_APPLICATION_THREAD_PRIO, 0, 300);

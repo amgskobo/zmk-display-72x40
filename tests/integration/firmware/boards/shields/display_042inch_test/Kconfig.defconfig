@@ -1,10 +1,10 @@
 # Copyright (c) 2026 amgskobo
 # SPDX-License-Identifier: MIT
 
-if SHIELD_DISPLAY_LITE_TEST
+if SHIELD_DISPLAY_042INCH_TEST
 
 config ZMK_KEYBOARD_NAME
-    default "Display lite"
+    default "Display 0.42-inch"
 
 # A split central, so that the peripheral battery line is built too.
 config ZMK_SPLIT

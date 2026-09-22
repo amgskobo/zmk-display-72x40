@@ -3,7 +3,7 @@
 
 description: |
   A page-tiled monochrome display that records what it is sent, for the
-  zmk-display-lite runtime tests. 72x40 only.
+  zmk-display-042inch runtime tests. 72x40 only.
 
 compatible: "zmk,test-recording-display"
 

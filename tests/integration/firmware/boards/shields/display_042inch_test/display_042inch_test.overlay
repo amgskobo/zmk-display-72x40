@@ -31,43 +31,43 @@
 
 / {
     chosen {
-        zmk,kscan = &display_lite_test_kscan;
-        zmk,physical-layout = &display_lite_test_layout;
+        zmk,kscan = &display_042inch_test_kscan;
+        zmk,physical-layout = &display_042inch_test_layout;
     };
 
-    display_lite_test_kscan: display_lite_test_kscan {
+    display_042inch_test_kscan: display_042inch_test_kscan {
         compatible = "zmk,kscan-gpio-matrix";
         diode-direction = "col2row";
         row-gpios = <&gpio0 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
         col-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
     };
 
-    display_lite_test_transform: display_lite_test_transform {
+    display_042inch_test_transform: display_042inch_test_transform {
         compatible = "zmk,matrix-transform";
         rows = <1>;
         columns = <1>;
         map = <RC(0, 0)>;
     };
 
-    display_lite_test_layout: display_lite_test_layout {
+    display_042inch_test_layout: display_042inch_test_layout {
         compatible = "zmk,physical-layout";
-        display-name = "Display lite test";
-        transform = <&display_lite_test_transform>;
+        display-name = "Display 0.42-inch test";
+        transform = <&display_042inch_test_transform>;
         keys = <&key_physical_attrs 100 100 0 0 0 0 0>;
     };
 
     /* Stands in for a touch controller on the same bus. */
-    display_lite_test_pad: display_lite_test_pad {
+    display_042inch_test_pad: display_042inch_test_pad {
         compatible = "zmk,input-mock";
         event-period = <100>;
         events = <>;
     };
 
     status_panel {
-        compatible = "zmk,display-lite";
+        compatible = "zmk,display-042inch";
         display = <&oled>;
         hidden-layers = <2>;
-        sync-input-device = <&display_lite_test_pad>;
+        sync-input-device = <&display_042inch_test_pad>;
         contrast = <128>;
         /* Built turned on its side, so the projection is compiled too. */
         rotation = <90>;

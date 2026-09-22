@@ -15,12 +15,12 @@ description: |
 
     / {
         status_panel {
-            compatible = "zmk,display-lite";
+            compatible = "zmk,display-042inch";
             display = <&oled>;
         };
     };
 
-compatible: "zmk,display-lite"
+compatible: "zmk,display-042inch"
 
 properties:
   display:
@@ -46,7 +46,7 @@ properties:
       ready-interrupt window. While that device is reporting, the panel
       sends one write right after each of its reports, in the gap before its
       next sample, instead of whenever a change comes. When it has been quiet
-      for CONFIG_ZMK_DISPLAY_LITE_SYNC_WINDOW_MS the panel writes freely.
+      for CONFIG_ZMK_DISPLAY_042INCH_SYNC_WINDOW_MS the panel writes freely.
 
   contrast:
     type: int
@@ -64,8 +64,8 @@ properties:
       up. Give it here rather than to the panel's own node: the SSD1306
       driver sends its first command the moment it releases reset, which some
       panels answer with a NACK, and its init then fails for good. This
-      module holds the line low for CONFIG_ZMK_DISPLAY_LITE_RESET_PULSE_MS
-      and waits CONFIG_ZMK_DISPLAY_LITE_RESET_SETTLE_MS before the driver
+      module holds the line low for CONFIG_ZMK_DISPLAY_042INCH_RESET_PULSE_MS
+      and waits CONFIG_ZMK_DISPLAY_042INCH_RESET_SETTLE_MS before the driver
       runs.
 
   rotation:

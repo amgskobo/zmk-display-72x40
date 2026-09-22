@@ -1,5 +1,0 @@
-# Copyright (c) 2026 amgskobo
-# SPDX-License-Identifier: MIT
-
-config SHIELD_DISPLAY_LITE_TEST
-    def_bool $(shields_list_contains,display_lite_test)
