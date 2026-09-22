@@ -1,0 +1,7 @@
+# Copyright (c) 2026 amgskobo
+# SPDX-License-Identifier: MIT
+
+name: zmk-display-lite-fixture
+build:
+  settings:
+    board_root: .

@@ -1,0 +1,77 @@
+/*
+ * Copyright (c) 2026 amgskobo
+ * SPDX-License-Identifier: MIT
+ *
+ * A 0.42-inch 72x40 SSD1306 on the XIAO's I2C pins, sharing the bus with an
+ * input device, as the module is meant to be used.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <physical_layouts.dtsi>
+#include <dt-bindings/zmk/matrix_transform.h>
+
+&i2c1 {
+    status = "okay";
+
+    oled: ssd1306@3c {
+        compatible = "solomon,ssd1306fb";
+        reg = <0x3c>;
+        width = <72>;
+        height = <40>;
+        segment-offset = <28>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <39>;
+        segment-remap;
+        com-invdir;
+        prechargep = <0x22>;
+        use-internal-iref;
+    };
+};
+
+/ {
+    chosen {
+        zmk,kscan = &display_lite_test_kscan;
+        zmk,physical-layout = &display_lite_test_layout;
+    };
+
+    display_lite_test_kscan: display_lite_test_kscan {
+        compatible = "zmk,kscan-gpio-matrix";
+        diode-direction = "col2row";
+        row-gpios = <&gpio0 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+        col-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+    };
+
+    display_lite_test_transform: display_lite_test_transform {
+        compatible = "zmk,matrix-transform";
+        rows = <1>;
+        columns = <1>;
+        map = <RC(0, 0)>;
+    };
+
+    display_lite_test_layout: display_lite_test_layout {
+        compatible = "zmk,physical-layout";
+        display-name = "Display lite test";
+        transform = <&display_lite_test_transform>;
+        keys = <&key_physical_attrs 100 100 0 0 0 0 0>;
+    };
+
+    /* Stands in for a touch controller on the same bus. */
+    display_lite_test_pad: display_lite_test_pad {
+        compatible = "zmk,input-mock";
+        event-period = <100>;
+        events = <>;
+    };
+
+    status_panel {
+        compatible = "zmk,display-lite";
+        display = <&oled>;
+        hidden-layers = <2>;
+        sync-input-device = <&display_lite_test_pad>;
+        contrast = <128>;
+        /* Built turned on its side, so the projection is compiled too. */
+        rotation = <90>;
+        /* And with a reset line, so that pulse is compiled too. */
+        reset-gpios = <&gpio1 0 GPIO_ACTIVE_LOW>;
+    };
+};

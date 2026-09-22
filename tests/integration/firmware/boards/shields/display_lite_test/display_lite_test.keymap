@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) 2026 amgskobo
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+/ {
+    keymap {
+        compatible = "zmk,keymap";
+
+        base {
+            display-name = "BASE";
+            bindings = <&mo 1>;
+        };
+
+        num {
+            display-name = "NUM";
+            bindings = <&trans>;
+        };
+
+        touch {
+            display-name = "TOUCH";
+            bindings = <&trans>;
+        };
+    };
+};

@@ -1,0 +1,69 @@
+/*
+ * Copyright (c) 2026 amgskobo
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/kscan_mock.h>
+
+/* The board's SDL display would need a desktop; the recording one stands in. */
+&sdl_dc {
+    status = "disabled";
+};
+
+&input_sdl_touch {
+    status = "disabled";
+};
+
+/ {
+    keymap {
+        compatible = "zmk,keymap";
+
+        base {
+            display-name = "BASE";
+            bindings = <&kp A &kp B &kp C &kp D>;
+        };
+
+        num {
+            display-name = "NUM";
+            bindings = <&trans &trans &trans &trans>;
+        };
+
+        /* Stands in for a layer that touch activity raises. */
+        touch {
+            display-name = "TOUCH";
+            bindings = <&trans &trans &trans &trans>;
+        };
+
+        unnamed {
+            bindings = <&trans &trans &trans &trans>;
+        };
+    };
+
+    panel: panel {
+        compatible = "zmk,test-recording-display";
+        width = <72>;
+        height = <40>;
+    };
+
+    /* Sends nothing by itself; the self-tests report through it. */
+    sync_pad: sync_pad {
+        compatible = "zmk,input-mock";
+        event-period = <100>;
+        events = <>;
+    };
+
+    status_panel {
+        compatible = "zmk,display-lite";
+        display = <&panel>;
+        hidden-layers = <2>;
+        sync-input-device = <&sync_pad>;
+        contrast = <99>;
+    };
+};
+
+/* An empty mock exits at boot; one late press keeps the process up for the tests. */
+&kscan {
+    events = <ZMK_MOCK_PRESS(0,0,30000)>;
+};

@@ -1,0 +1,82 @@
+# Copyright (c) 2026 amgskobo
+# SPDX-License-Identifier: MIT
+
+description: |
+  A status panel drawn without LVGL on a monochrome, page-tiled display: the
+  SSD1306, SSD1309 and SH1106 drivers, or any Zephyr display that reports
+  SCREEN_INFO_MONO_VTILED. The panel shows the highest active layer, the host
+  connection, the battery levels, and Caps Lock and Studio's lock where those
+  features are built in.
+
+  It draws only when something it shows has changed, and then sends only the
+  columns that changed. It keeps no timer running.
+
+  Declare one node, on a unibody keyboard or a split central:
+
+    / {
+        status_panel {
+            compatible = "zmk,display-lite";
+            display = <&oled>;
+        };
+    };
+
+compatible: "zmk,display-lite"
+
+properties:
+  display:
+    type: phandle
+    required: true
+    description: |
+      The display to draw on. Its node's width and height give the canvas
+      size; the height must be a multiple of 8.
+
+  hidden-layers:
+    type: array
+    description: |
+      Layer ids the panel never names. It shows the highest active layer that
+      is not listed, and a change to a listed layer does not wake it, so
+      layers raised by pointer or touch activity cost no bus traffic. Ids are
+      below 32; the default layer is always shown when nothing above it is.
+
+  sync-input-device:
+    type: phandle
+    description: |
+      An input device on the same bus as the display that owns a sampling
+      window there, such as a touch controller that reads in a
+      ready-interrupt window. While that device is reporting, the panel
+      sends one write right after each of its reports, in the gap before its
+      next sample, instead of whenever a change comes. When it has been quiet
+      for CONFIG_ZMK_DISPLAY_LITE_SYNC_WINDOW_MS the panel writes freely.
+
+  contrast:
+    type: int
+    description: |
+      Contrast (brightness) from 0 to 255, set once at boot. Leave it out to
+      keep the driver's default (CONFIG_SSD1306_DEFAULT_CONTRAST for the
+      SSD1306 family).
+
+  reset-gpios:
+    type: phandle-array
+    description: |
+      The panel's active-low reset line, pulsed before the display driver
+      initialises so that the controller starts from a known state at every
+      firmware start, not only when its own power-up circuit sees power come
+      up. Give it here rather than to the panel's own node: the SSD1306
+      driver sends its first command the moment it releases reset, which some
+      panels answer with a NACK, and its init then fails for good. This
+      module holds the line low for CONFIG_ZMK_DISPLAY_LITE_RESET_PULSE_MS
+      and waits CONFIG_ZMK_DISPLAY_LITE_RESET_SETTLE_MS before the driver
+      runs.
+
+  rotation:
+    type: int
+    default: 0
+    enum: [0, 90, 180, 270]
+    description: |
+      How far counter-clockwise the drawing is turned before it is sent, for
+      a panel mounted on its side. These controllers cannot turn a picture
+      themselves, so the module lays the status out for the turned size (a
+      72x40 panel at 90 or 270 is drawn as 40 wide and 72 tall, with the
+      battery lines one above the other) and turns it column by column on the
+      way out. A turned panel must be a multiple of 8 columns wide. If the
+      panel reads upside down, use the other right angle.

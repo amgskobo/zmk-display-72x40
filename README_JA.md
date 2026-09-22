@@ -1,0 +1,306 @@
+# ZMK Display Lite
+
+[![Test](https://github.com/amgskobo/zmk-display-lite/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-lite/actions/workflows/test.yml)
+
+[English](README.md)
+
+小型モノクロ OLED(SSD1306、SSD1309、SH1106)に、LVGL を使わずにステータス
+を描画するモジュールです。パネルがタッチコントローラーと同じバスを共有する
+キーボードや、フラッシュ・RAM・バッテリーに余裕のないキーボード向けです。
+
+- 最上位の有効レイヤーを大きな文字で、ホスト接続、split 両側のバッテリー残量、
+  組み込まれていれば Caps Lock と Studio のロック状態を表示します。
+- 再描画のタイマーを持ちません。表示内容が変わるイベントで 1 回だけ再描画し、
+  変化した列だけを送ります。表示が変わらなければ何もしません。
+- ポインターやタッチ操作で自動的に上がるレイヤーを表示対象から外せるので、
+  トラックパッドを操作しても表示の通信は発生しません。
+- タッチコントローラーとバスを共有するときは、コントローラーのレポート直後、
+  次の読み取りウィンドウに掛からないタイミングで書き込みます。
+- 最後のキー・エンコーダー・ポインター操作から 30 秒後(変更可、無効も可)と、
+  電源オフの前(`&soft_off` を含む)にパネルを消灯します。
+
+```
+ 72x40 パネル
+ +------------------------+
+ |       N U M            |   レイヤー(倍角)
+ |                        |
+ | ᛒ1 ✓                   |   BLE プロファイル 1、接続中
+ | L 85%            R 72% |   左右のバッテリー
+ | CAPS                   |   Caps Lock
+ +------------------------+
+```
+
+## インストール
+
+### 1. module を追加する
+
+利用側 config の `config/west.yml` に:
+
+```yaml
+  remotes:
+    - name: amgskobo
+      url-base: https://github.com/amgskobo
+  projects:
+    - name: zmk-display-lite
+      remote: amgskobo
+      revision: main
+```
+
+### 2. パネルを記述する
+
+8 ピクセル単位のページでメモリーを持つ Zephyr ディスプレイ
+(`SCREEN_INFO_MONO_VTILED`)なら使えます。たとえば I2C 接続の 0.42 インチ
+72x40 SSD1306:
+
+```dts
+&i2c1 {
+    oled: ssd1306@3c {
+        compatible = "solomon,ssd1306fb";
+        reg = <0x3c>;
+        width = <72>;
+        height = <40>;
+        segment-offset = <28>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <39>;
+        segment-remap;
+        com-invdir;
+        prechargep = <0x22>;
+        use-internal-iref;
+    };
+};
+```
+
+高さは 8 の倍数である必要があります。
+
+### 3. ステータスパネルを宣言する
+
+unibody キーボード、または split の central(keymap を持つ側)に:
+
+```dts
+/ {
+    status_panel {
+        compatible = "zmk,display-lite";
+        display = <&oled>;
+        /* 任意 */
+        hidden-layers = <6 7 8>;
+        sync-input-device = <&trackpad>;
+        contrast = <128>;
+        rotation = <90>;
+    };
+};
+```
+
+このノードで `CONFIG_ZMK_DISPLAY_LITE` が有効になり、ディスプレイドライバの
+サブシステムも自動で選択されます。`CONFIG_ZMK_DISPLAY`(ZMK の LVGL 表示)は
+オフのままにしてください。両方が同じパネルを持つことになるため、オンの間は
+このモジュールはビルドされません。
+
+| プロパティ | 意味 |
+| --- | --- |
+| `display` | 描画先のパネル。その `width` と `height` がキャンバスの大きさになります。 |
+| `hidden-layers` | パネルに表示しないレイヤー ID。これらの変化ではモジュールは動きません。 |
+| `sync-input-device` | 同じバス上の入力デバイス。[バスの共有](#バスの共有)を参照。 |
+| `contrast` | 0-255。起動時に 1 回設定します。 |
+| `reset-gpios` | パネルのアクティブ Low のリセット線。ディスプレイドライバの初期化前にパルスを出します。[パネルのリセット](#パネルのリセット)を参照。 |
+| `rotation` | 反時計回りの回転角(0/90/180/270)。横倒しに取り付けたパネル用。[横倒しのパネル](#横倒しのパネル)を参照。 |
+
+### オプション
+
+| Kconfig | 既定値 | 意味 |
+| --- | --- | --- |
+| `CONFIG_ZMK_DISPLAY_LITE_CUSTOM_SETTINGS` | `n` | 下記の設定を Studio クライアントに公開します(zmk-feature-custom-settings が必要)。 |
+| `CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS` | `30000` | パネルの消灯タイマー。最後のキー・エンコーダー・ポインター操作からこの時間で消灯します。`0` で無効。 |
+| `CONFIG_ZMK_DISPLAY_LITE_UPDATE_DELAY_MS` | `20` | 連続した変化を 1 回の再描画にまとめる待ち時間。 |
+| `CONFIG_ZMK_DISPLAY_LITE_SYNC_WINDOW_MS` | `50` | 同期デバイスがレポート後「レポート中」とみなされる時間。 |
+| `CONFIG_ZMK_DISPLAY_LITE_RETRY_MS` | `1000` | 書き込み失敗時の再試行間隔(3 回まで)。 |
+| `CONFIG_ZMK_DISPLAY_LITE_PEER_POWER` | `y` | 外部電源で動作中の peripheral に稲妻を描きます(split リレーが必要)。 |
+| `CONFIG_ZMK_DISPLAY_LITE_POWER_REPORTER` | `y` | split peripheral 側にビルドされ、自分の電源状態を central へ伝えます。 |
+| `CONFIG_ZMK_DISPLAY_LITE_POWER_POLL_MS` | `2000` | その peripheral が VBUS を見る間隔。 |
+| `CONFIG_ZMK_DISPLAY_LITE_RESET_INIT_PRIORITY` | `84` | リセットパルスの POST_KERNEL 優先度。ディスプレイドライバより前。 |
+| `CONFIG_ZMK_DISPLAY_LITE_RESET_PULSE_MS` | `10` | リセット線を Low に保つ時間。 |
+| `CONFIG_ZMK_DISPLAY_LITE_RESET_SETTLE_MS` | `50` | 解除後に待つ時間。 |
+| `CONFIG_ZMK_DISPLAY_LITE_INIT_PRIORITY` | `86` | 起動時のパネル消去の POST_KERNEL 優先度。ディスプレイドライバより後。 |
+| `CONFIG_ZMK_DISPLAY_LITE_PM_INIT_PRIORITY` | `45` | `&soft_off` 用の電源オフデバイスの POST_KERNEL 優先度。パネルのバスより前。 |
+| `CONFIG_ZMK_DISPLAY_LITE_PM_LATE_INIT_PRIORITY` | `55` | 逆順にサスペンドするアイドルスリープ用の同じデバイス。パネルのバスより後。 |
+
+## 表示内容
+
+| ページ | 内容 |
+| --- | --- |
+| 0-1 | 非表示指定のない最上位の有効レイヤーを中央寄せで表示。名前全体が収まるときは縦横 2 倍(72 列で 6 文字、40 列で 3 文字まで)、収まらなければ等倍 1 行、それでも長ければ 2 行(ハイフンがあればそこで分割)。名前のないレイヤーは `LAYER <index>`。この 2 ページ分の高さは固定なので、下の行がずれることはありません。 |
+| 2 | `USB`、または Bluetooth マークとプロファイル番号に、チェック(接続中)、バツ(ボンド済み・未接続)、輪(ボンドなし・ペアリング待ち)。ホスト未選択時は優先トランスポートとバツ。ZMK Studio のロック解除中は右端に開いた南京錠(`CONFIG_ZMK_STUDIO_LOCKING`)。 |
+| 3 | `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING` のある split central では `L 85%` と `R 72%`、それ以外は `BAT 85%`。文字の後の稲妻はその半分が外部電源で動作中であることを示します(peripheral 側は[外部電源の peripheral](#外部電源の-peripheral)が必要)。`R --` は peripheral が未接続であることを示します。ZMK は切断時にも本当に空のときにも 0 を報告するため、接続状況は split トランスポートに問い合わせ、接続中であれば `0%` を含めてその値を表示します。横に並べるには狭いパネルでは上下 2 行になります。 |
+| 4 | ホストの Caps Lock がオンの間 `CAPS`(`CONFIG_ZMK_HID_INDICATORS`)。 |
+
+ページ数の少ないパネルでは収まる行だけを表示します。フォントはこのモジュール
+のために描いた 5x7 の ASCII と、独自の記号 6 個です。
+
+## 低コストの仕組み
+
+フレームはコントローラーと同じ並び(ページごとに 1 列 1 バイト、72x40 で 360
+バイト)で RAM に置き、パネルに表示中の内容の写しと並べて持ちます。
+
+1. 購読しているイベントはフラグを立て、ZMK の低優先度ワークキューに 1 回分の
+   処理を `CONFIG_ZMK_DISPLAY_LITE_UPDATE_DELAY_MS` 後で予約します。非表示
+   レイヤーのイベントはその前に戻ります。
+2. 処理は状態を読んでフレーム全体を描きます。数千命令程度なので、描画の途中
+   状態は持ちません。
+3. ページごとにフレームと写しを比べ、変化した列の連続を 1 回の書き込みで送り
+   ます。間隔が 12 列以内の変化はまとめて送ります(2 つ目の区間のアドレス指定
+   と同程度のコストのため)。バッテリーの 1 桁が変わったときの画素データは
+   最大 5 バイトです。
+4. パネルが消灯中は描画だけを行い、次のキー・エンコーダー・ポインター操作で、
+   点灯より先に送ります。
+
+イベントの間に再描画は起きず、消灯タイマーもパネルが点灯している間しか
+動きません。72x40 パネルでモジュールが使うのは
+フラッシュ約 3.5 KB と RAM 約 0.8 KB、SSD1306 ドライバがフラッシュ約 1.4 KB
+です(nRF52840 ビルド)。ZMK 標準の表示は LVGL とそのフォント・オブジェクト
+ツリーに加え、キーボードの動作中は 10 ms ごとのティックを使います。このモジュール
+を作ったキーボードでは、置き換えでイメージが 115 KB 小さくなりました。
+
+## パネルのリセット
+
+RES# がモジュール上の抵抗とコンデンサだけで駆動されている場合、リセットが
+かかるのは電源投入時だけです。リセットボタン、ファームウェアの書き込み、
+ウォッチドッグのいずれでもコントローラーは以前の状態のままで、バスの異常で
+固まると電池を抜くまで復帰しません。RES# をピンに配線し、このノードの
+`reset-gpios` に指定すると、ファームウェア起動のたびにパルスが出ます。
+
+パネル側のノードではなくこのノードに書くのには理由があります。Zephyr の
+SSD1306 ドライバは `reset-gpios` を渡されると、解除した直後に最初のコマンドを
+送ります。これを NACK で返すパネル(0.42 インチの 72x40 モジュールがそうです)
+ではドライバの初期化が `-EIO` で失敗し、再試行もされないため画面は永久に暗い
+ままになります。このモジュールはドライバより前
+(`CONFIG_ZMK_DISPLAY_LITE_RESET_INIT_PRIORITY`、`CONFIG_DISPLAY_INIT_PRIORITY`
+より小さい値)でパルスを出し、`CONFIG_ZMK_DISPLAY_LITE_RESET_PULSE_MS` の間
+保持してから `CONFIG_ZMK_DISPLAY_LITE_RESET_SETTLE_MS` 待つので、ドライバは
+起動を終えたコントローラーに対して初期化を行えます。パネル側のノードには
+リセットピンを書かないでください。
+
+## 横倒しのパネル
+
+これらのコントローラーは 8 ピクセル単位のページで画像を保持し、回転機能を
+持たないため、`rotation` はこのモジュール側で回転します。回転後のサイズで
+レイアウトし、出力時に 1 列ずつ変換します。72x40 のパネルを 90 または 270 に
+すると、40 幅 72 高さで描画され、バッテリーは上下 2 行になり、1 行に収まらない
+レイヤー名はハイフン位置(なければ行末)で 2 行に分かれます。回転するパネルは
+幅が 8 の倍数である必要があります。
+
+90 は反時計回りで、描画の上辺がパネルの左辺に来ます。上下が逆に見える場合は
+270 にしてください。回転のコストはフレーム 1 枚分の走査(72x40 で約 3000
+ピクセル)と、フレームと同じ大きさのバッファ 1 つです。回転しない場合は
+どちらも増えません。
+
+## 外部電源の peripheral
+
+central は自分が給電されていることを知っているので、自分の行の稲妻はそのまま
+出せます。split の peripheral は違います。USB HID を出せない以上 USB スタック
+を積んでおらず、自分の電源が USB かどうかを ZMK から知る方法がありません。
+
+`CONFIG_ZMK_DISPLAY_LITE_POWER_REPORTER` は、パネルではなく peripheral 側に
+ビルドされ、SoC の USB VBUS 検出を直接読みます(USB 周辺機能を持つ nRF では
+レジスタ 1 ビットで、USB スタックの有無に関係なく読めます)。間隔は
+`CONFIG_ZMK_DISPLAY_LITE_POWER_POLL_MS` です。状態が変わるとフォークの split
+リレーで central へ送り、`CONFIG_ZMK_DISPLAY_LITE_PEER_POWER` がその半分の
+バッテリー残量の隣に稲妻として描きます。
+
+リンクは「確立」と報告された時点ではまだ central がリレー特性を購読しておらず、
+その前に送った通知は黙って捨てられます(送信関数はキューに積んだ時点で成功を
+返すため、失敗を検出できません)。そこでリンク確立後の数秒間に 4 回送り直します。
+重複しても central 側の負担はありません(画素が変わらない再描画は 0 バイトです)。
+
+どちらの設定も可能な場合は既定で有効です(reporter は
+`CONFIG_ZMK_SPLIT_RELAY_EVENT` のある nRF の split peripheral、central 側は
+リレーがある構成)。リレーを持たない upstream ZMK ではどちらもビルドされず、
+peripheral の行に稲妻が出ないだけです。
+
+## バスの共有
+
+IQS7211E などのタッチコントローラーは、データがあると読み取りウィンドウを開き
+(ready 線が Low)、次の I2C STOP で閉じます。ウィンドウが開いてからコントロー
+ラーの読み取りまでの間にパネルの書き込みが入ると、その読み取りが遅れ、書き込み
+の STOP でウィンドウが早く閉じるおそれがあります。
+
+`sync-input-device` にそのコントローラーを指定すると、モジュールはその入力
+レポートを監視します。コントローラーが `CONFIG_ZMK_DISPLAY_LITE_SYNC_WINDOW_MS`
+以内にレポートしている間、パネルへの書き込みは次のレポートを待ち、その直後に
+1 レポートにつき 1 回ずつ送ります。そのときコントローラーの読み取りは終わった
+ばかりで、次のサンプルは 1 レポート周期先です。再描画は変化した区間 1 つにつき
+1 レポートかかり、全行が変わっても数レポートで終わります。コントローラーが指定
+時間レポートしなければすぐに書き込みます。
+1 回の書き込みは最大 1 ページ(72 バイトとアドレス指定)なので、重なった場合
+でも読み取りの待ちは 400 kHz で約 2 ms です。
+
+同じデバイスが自動で上げるレイヤーは `hidden-layers` に入れてください。指を
+動かしてもパネルの内容は変わらず、何も送られません。
+
+## 消費電力
+
+- `CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS`(既定 30 秒)で、最後のキー・
+  エンコーダー・ポインター操作(ZMK のアイドル判定と同じ入力)からその時間が
+  たつとパネルを消灯し(コントローラーのディスプレイオフコマンド)、次の操作で
+  点灯します。消灯中の変化は描画だけ行って点灯しないので、誰も見ていない
+  バッテリー表示に電力を使いません。点灯したときにはその状態が描画済みです。
+  操作は時刻を記録するだけで、タイマーはパネルが点灯している間しか動きません。
+- ZMK のアイドルに合わせて消灯する設定はありません。タイマーで足りるからです。
+  ZMK のアイドル時間より短ければ必ず先に消灯し、長ければ(`0` なら無効)指定
+  どおり点灯を続け、キーボードの電源オフで必ず消灯します。
+- ZMK の電源オフには `&soft_off` と、`CONFIG_ZMK_IDLE_SLEEP_TIMEOUT` による
+  アイドルスリープの 2 つの経路があり、どちらも専用のイベントを出しません。
+  SoC の電源が切れてもパネルには電源と表示が残ります。そのためモジュールは
+  小さな電源管理デバイスを登録します。ZMK は電源オフ前にこれをサスペンドし、
+  そこで再描画を止めてパネルを消灯します。2 つの経路はデバイスを逆の順序で
+  サスペンドし(`&soft_off` は初期化順、アイドルスリープはその逆)、消灯には
+  パネルのバスが必要なので、バスの前後に 1 つずつ置きます。バスより前が
+  `CONFIG_ZMK_DISPLAY_LITE_PM_INIT_PRIORITY`、後が
+  `CONFIG_ZMK_DISPLAY_LITE_PM_LATE_INIT_PRIORITY` です。先に動いた方が消灯し、
+  もう一方は消灯済みのパネルに触れません。
+- 起動時は、ドライバの準備ができた時点でパネルを消去するので、コントローラー
+  のメモリーに残った内容は表示されません。
+
+## 実行時の設定
+
+キーボードの動作中に変えられる設定は 2 つあり、どちらもビルド時の値から
+始まります。
+
+| 設定 | 設定関数 | 既定値 |
+| --- | --- | --- |
+| パネルの消灯タイマー | `zmk_display_lite_set_blank_after_ms()` | `CONFIG_ZMK_DISPLAY_LITE_BLANK_AFTER_MS` |
+| コントラスト(0-255) | `zmk_display_lite_set_contrast()` | ノードの `contrast`、なければドライバの値 |
+
+設定関数(`zmk-display-lite/display_lite.h`)はどのスレッドから呼んでも安全
+です。値を記録してモジュール自身の処理を予約するだけで、パネルに書き込むのは
+その処理だけなので、変更も他の書き込みと同じく同期デバイスの読み取りを避けて
+送られます。どちらもすぐに反映されます。新しいタイマーは最後のキー操作から
+計り直し、`0` にすると以前のタイマーで消灯したパネルが点灯します。
+
+`CONFIG_ZMK_DISPLAY_LITE_CUSTOM_SETTINGS=y` にすると、Studio クライアントが
+[zmk-feature-custom-settings](https://github.com/cormoran/zmk-feature-custom-settings)
+を通して `amgskobo__display` の見出しの下で編集できます。キーは
+`display.blank_after_s`(秒、0-600、0 で無効)と `display.contrast` です。
+パネルは常に 1 つなので、キーはノード名ではなく固定の接頭辞を使い、ノード名を
+変えても保存値が残ります。カスタム Studio RPC を持つパッチ版 ZMK が必要で、
+upstream ZMK では何もビルドされません。
+
+## 互換性とテスト
+
+upstream ZMK の `main` と、DYA Studio フォーク(`cormoran/zmk` の `main+dya`)
+の両方でビルドできます。使うのは Zephyr の display API と input API、ZMK の
+公開イベントと状態取得関数だけです。
+
+- `tests/run.sh` は描画コアをホストで厳しい警告付き、最適化ありと ASan/UBSan
+  付きでビルドし、レイアウト・フォント・変化区間の検出を確認し、生成済みの
+  フォントヘッダーがソースと一致することも確認します。`DL_TEST_DUMP=1` で
+  テストが描いたフレームを表示します。
+- `tests/run-integration-docker.sh upstream|dya` は XIAO BLE と SSD1306 の
+  ファームウェアをビルドし、記録用ディスプレイに対して ZMK のイベントを流す
+  native_sim テストで、パネルに届く内容を確認します。
+
+フォントは `scripts/font5x7.txt` にあり、`scripts/gen_font.py` がそこから
+`include/zmk-display-lite/display_lite_font.h` を生成します。
+
+## License
+
+MIT。[LICENSE](LICENSE) を参照してください。

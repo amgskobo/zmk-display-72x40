@@ -1,0 +1,178 @@
+# Copyright (c) 2026 amgskobo
+# SPDX-License-Identifier: MIT
+
+DT_COMPAT_ZMK_DISPLAY_LITE := zmk,display-lite
+
+config ZMK_DISPLAY_LITE
+    bool "Low-cost status panel without LVGL"
+    default $(dt_compat_enabled,$(DT_COMPAT_ZMK_DISPLAY_LITE))
+    # Both would own the same panel. ZMK's display runs LVGL and a 10 ms tick
+    # while the keyboard is active; this module replaces it rather than
+    # joining it.
+    depends on !ZMK_DISPLAY
+    # It reads the keymap and the host endpoints, which only a central (or a
+    # unibody keyboard) has.
+    depends on !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
+    select DISPLAY
+    # Every redraw runs here rather than on the system work queue, where ZMK
+    # posts the work that restarts advertising after a host disconnect.
+    select ZMK_LOW_PRIORITY_WORK_QUEUE
+    help
+      Draws a status panel on a monochrome, page-tiled display (SSD1306,
+      SSD1309, SH1106) through the Zephyr display API, with a 5x7 font of its
+      own instead of LVGL: the highest active layer in large type, the host
+      connection, the battery levels of both halves of a split, and Caps Lock
+      and Studio's lock where those features are built in.
+
+      The panel is redrawn only when an event changes something it shows, and
+      only the columns that changed are sent. Nothing redraws on a clock, so an
+      unchanged panel costs neither CPU time nor bus traffic; the one timer,
+      the panel's timeout, runs only while it is lit. With sync-input-device
+      set, writes on a bus shared with an input device are placed right after
+      that device's reports.
+
+      Enabled by a zmk,display-lite devicetree node.
+
+if ZMK_DISPLAY_LITE
+
+config ZMK_DISPLAY_LITE_BLANK_AFTER_MS
+    int "Switch the panel off this long after the last key, encoder or pointer (ms)"
+    default 30000
+    range 0 600000
+    help
+      The panel's timeout, and the only thing that switches it off while the
+      keyboard runs. It counts the same inputs as ZMK's idle timeout - key
+      presses, encoder turns and pointer reports - so the default, which is
+      ZMK's default idle timeout, darkens the panel when ZMK goes idle. Set
+      it shorter to darken the screen earlier; set it longer, or to 0 for no
+      timeout, to keep the panel lit through ZMK's idle. Whatever the value,
+      the panel is switched off before the keyboard powers off.
+
+      Any key press, encoder turn or pointer report switches the panel back
+      on, showing whatever changed while it was dark; changes on their own do
+      not, so a keyboard left alone stops lighting the panel for a battery
+      reading no one reads. A dark panel draws microamps.
+
+config ZMK_DISPLAY_LITE_CUSTOM_SETTINGS
+    bool "Publish the panel's settings through zmk-feature-custom-settings"
+    # Not ZMK_CUSTOM_SETTINGS: registering a subsystem needs zmk/studio/custom.h,
+    # which includes ZMK's nanopb-generated proto/zmk/custom.pb.h, generated only
+    # when the Studio RPC is built.
+    depends on ZMK_CUSTOM_SETTINGS_STUDIO_RPC
+    help
+      Registers the panel's blank timeout (display.blank_after_s, in seconds,
+      0 for none) and its contrast (display.contrast, 0-255) in the
+      cross-module custom settings registry, so a Studio client lists and
+      edits them under the amgskobo__display heading with no page of its
+      own. The defaults are the build's own values:
+      ZMK_DISPLAY_LITE_BLANK_AFTER_MS and the node's contrast property.
+
+      Needs zmk-feature-custom-settings, and so the patched ZMK that carries
+      the custom Studio RPC protocol. Off, which is the default and what an
+      upstream ZMK build gets, none of it is compiled; the setters in
+      display_lite.h still work.
+
+config ZMK_DISPLAY_LITE_UPDATE_DELAY_MS
+    int "Delay that gathers a burst of changes into one redraw (ms)"
+    default 20
+    range 0 1000
+
+config ZMK_DISPLAY_LITE_SYNC_WINDOW_MS
+    int "How long sync-input-device counts as reporting after a report (ms)"
+    default 50
+    range 1 1000
+    help
+      While the sync-input-device has reported within this window, the panel
+      waits for its next report before each write. Keep it above that
+      device's report interval (15 ms for an IQS7211E touching) and short
+      enough that a panel update after the last report is not held back
+      noticeably.
+
+config ZMK_DISPLAY_LITE_RETRY_MS
+    int "Delay before a failed panel write is retried (ms)"
+    default 1000
+    range 10 60000
+    help
+      A failed write is retried three times at this interval, then left until
+      the next change the panel shows.
+
+config ZMK_DISPLAY_LITE_PEER_POWER
+    bool "Show whether the split peripheral is on external power"
+    default y
+    depends on ZMK_SPLIT_RELAY_EVENT
+    help
+      Draws a bolt beside the peripheral's battery level while that half is
+      plugged in, from what its own power reporter relays (see
+      ZMK_DISPLAY_LITE_POWER_REPORTER, which the peripheral's build needs).
+      ZMK itself carries a peripheral's battery level but not its power
+      source, so this rides the fork's split relay; without the relay there
+      is nothing to listen to and the bolt is left out.
+
+config ZMK_DISPLAY_LITE_RESET_INIT_PRIORITY
+    int "Init priority of the panel reset pulse"
+    default 84
+    help
+      POST_KERNEL priority at which reset-gpios is pulsed. It must come
+      before the display driver (CONFIG_DISPLAY_INIT_PRIORITY), so that the
+      driver finds a controller that has finished starting up.
+
+config ZMK_DISPLAY_LITE_RESET_PULSE_MS
+    int "How long the panel's reset line is held low (ms)"
+    default 10
+    range 1 1000
+
+config ZMK_DISPLAY_LITE_RESET_SETTLE_MS
+    int "How long to wait after releasing the panel's reset line (ms)"
+    default 50
+    range 1 1000
+    help
+      An SSD1306 answers with a NACK for a while after reset, and a driver
+      that sends its first command straight away fails for good.
+
+config ZMK_DISPLAY_LITE_INIT_PRIORITY
+    int "Init priority of the boot-time panel clear"
+    default 86
+    help
+      POST_KERNEL priority at which the panel is cleared, so that boot shows
+      no leftover controller memory. It must come after the display driver
+      (CONFIG_DISPLAY_INIT_PRIORITY) and after ZMK's low-priority work queue.
+
+config ZMK_DISPLAY_LITE_PM_INIT_PRIORITY
+    int "Init priority of the power-management device before the bus"
+    default 45
+    help
+      POST_KERNEL priority of the small device that switches the panel off
+      when the keyboard powers off through &soft_off. That path suspends
+      devices in init order, so this must come before the panel's bus (I2C or
+      SPI) for the bus to still work when the panel is switched off.
+
+config ZMK_DISPLAY_LITE_PM_LATE_INIT_PRIORITY
+    int "Init priority of the power-management device after the bus"
+    default 55
+    help
+      The same for ZMK's idle sleep, which suspends devices in the reverse of
+      init order, so this device must come after the panel's bus. Whichever
+      of the two runs first finds the bus up and switches the panel off; the
+      other finds it dark and leaves it alone.
+
+endif # ZMK_DISPLAY_LITE
+
+config ZMK_DISPLAY_LITE_POWER_REPORTER
+    bool "Tell the central when this peripheral is on external power"
+    default y
+    depends on ZMK_SPLIT && !ZMK_SPLIT_ROLE_CENTRAL && ZMK_SPLIT_RELAY_EVENT
+    depends on SOC_FAMILY_NORDIC_NRF
+    select ZMK_LOW_PRIORITY_WORK_QUEUE
+    help
+      Built on a split peripheral, where the panel itself is not. A
+      peripheral has no USB stack - it cannot expose USB HID - so it reads
+      the SoC's USB VBUS detection directly, and relays a change to the
+      central, which draws it beside this half's battery level. Needs an nRF
+      with a USB peripheral; turn it off to save the poll on a keyboard whose
+      central has no panel.
+
+config ZMK_DISPLAY_LITE_POWER_POLL_MS
+    int "How often the peripheral looks at its USB VBUS line (ms)"
+    default 2000
+    range 100 60000
+    depends on ZMK_DISPLAY_LITE_POWER_REPORTER

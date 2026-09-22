@@ -1,0 +1,16 @@
+# Copyright (c) 2026 amgskobo
+# SPDX-License-Identifier: MIT
+
+if SHIELD_DISPLAY_LITE_TEST
+
+config ZMK_KEYBOARD_NAME
+    default "Display lite"
+
+# A split central, so that the peripheral battery line is built too.
+config ZMK_SPLIT
+    default y
+
+config ZMK_SPLIT_ROLE_CENTRAL
+    default y
+
+endif

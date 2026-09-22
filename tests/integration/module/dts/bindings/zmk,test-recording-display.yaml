@@ -1,0 +1,10 @@
+# Copyright (c) 2026 amgskobo
+# SPDX-License-Identifier: MIT
+
+description: |
+  A page-tiled monochrome display that records what it is sent, for the
+  zmk-display-lite runtime tests. 72x40 only.
+
+compatible: "zmk,test-recording-display"
+
+include: display-controller.yaml
