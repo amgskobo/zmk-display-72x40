@@ -1,6 +1,6 @@
 # ZMK Display Lite
 
-[![Test](https://github.com/amgskobo/zmk-display-lite/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-lite/actions/workflows/test.yml)
+[![Test](https://github.com/amgskobo/zmk-display-0.42inch/actions/workflows/test.yml/badge.svg)](https://github.com/amgskobo/zmk-display-0.42inch/actions/workflows/test.yml)
 
 [日本語](README_JA.md)
 
@@ -43,9 +43,10 @@ In the consuming config's `config/west.yml`:
     - name: amgskobo
       url-base: https://github.com/amgskobo
   projects:
-    - name: zmk-display-lite
-      remote: amgskobo
-      revision: main
+- name: zmk-display-0.42inch
+  remote: amgskobo
+  revision: main
+  path: zmk-display-lite
 ```
 
 ### 2. Describe the panel

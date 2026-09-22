@@ -67,7 +67,7 @@ static bool dl_namespace_handler(const zmk_custom_CallRequest *request,
  * through custom-settings' own RPC - so the handler declines every request.
  */
 static struct zmk_rpc_custom_subsystem_meta dl_meta = {
-    ZMK_RPC_CUSTOM_SUBSYSTEM_UI_URLS("https://github.com/amgskobo/zmk-display-lite"),
+        ZMK_RPC_CUSTOM_SUBSYSTEM_UI_URLS("https://github.com/amgskobo/zmk-display-0.42inch"),
     .security = ZMK_STUDIO_RPC_HANDLER_UNSECURED,
 };
 
