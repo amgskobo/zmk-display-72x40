@@ -46,3 +46,13 @@ for variant in "${variants[@]}"; do
         -o "$build_dir/splash-$label"
     "$build_dir/splash-$label"
 done
+
+cc "${warnings[@]}" -O0 --coverage -I"$repo_root/include" \
+    "$repo_root/tests/test_display_72x40_splash.c" -o "$build_dir/splash-coverage"
+"$build_dir/splash-coverage"
+coverage=$(cd "$build_dir" && gcov -b -c -o "$build_dir/splash-coverage-test_display_72x40_splash.gcno" \
+    "$repo_root/tests/test_display_72x40_splash.c")
+printf '%s\n' "$coverage"
+helper=$(printf '%s\n' "$coverage" | grep -F -A4 '/display_72x40_splash.h')
+printf '%s\n' "$helper" | grep -Fq 'Lines executed:100.00%'
+printf '%s\n' "$helper" | grep -Fq 'Taken at least once:100.00%'
