@@ -75,6 +75,10 @@
 #include <zmk-display-72x40/display_72x40.h>
 #include <zmk-display-72x40/display_72x40_core.h>
 
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+#include <zmk-led-patterns/events/state_changed.h>
+#endif
+
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 1,
@@ -224,9 +228,33 @@ enum {
 static atomic_t d72x40_flags = ATOMIC_INIT(BIT(D72X40_REDRAW));
 
 static void d72x40_work_handler(struct k_work *work);
+static void d72x40_schedule_now(void);
 
 /* Defined at compile time: listeners may schedule it before any init runs. */
 static K_WORK_DELAYABLE_DEFINE(d72x40_work, d72x40_work_handler);
+
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+static atomic_t d72x40_led_pattern;
+static atomic_t d72x40_led_brightness;
+static atomic_t d72x40_led_speed;
+static atomic_t d72x40_led_changed_at_ms;
+static atomic_t d72x40_led_splash_seen;
+
+static void d72x40_led_splash_handler(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(d72x40_led_splash_work, d72x40_led_splash_handler);
+
+static void d72x40_led_splash_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+    const uint32_t elapsed = k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_led_changed_at_ms);
+    if (elapsed < CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS) {
+        k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
+                                    K_MSEC(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS - elapsed));
+        return;
+    }
+    atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+    d72x40_schedule_now();
+}
+#endif
 
 static void d72x40_schedule(k_timeout_t delay) {
     k_work_schedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_work, delay);
@@ -546,6 +574,7 @@ static void d72x40_collect(struct d72x40_status *st) {
 #endif
 
 #if IS_ENABLED(CONFIG_ZMK_STUDIO_LOCKING)
+    st->studio_lock_available = true;
     st->unlocked = zmk_studio_core_get_lock_state() == ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED;
 #endif
 }
@@ -657,10 +686,22 @@ static void d72x40_work_handler(struct k_work *work) {
     }
 
     if (atomic_test_and_clear_bit(&d72x40_flags, D72X40_REDRAW)) {
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+        if (atomic_get(&d72x40_led_splash_seen) != 0 &&
+            k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_led_changed_at_ms) <
+                CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS) {
+            d72x40_render_led_splash(&d72x40_canvas,
+                                    (uint8_t)atomic_get(&d72x40_led_pattern),
+                                    (uint8_t)atomic_get(&d72x40_led_brightness),
+                                    (uint16_t)atomic_get(&d72x40_led_speed));
+        } else
+#endif
+        {
         struct d72x40_status st;
 
         d72x40_collect(&st);
         d72x40_render(&d72x40_canvas, &st);
+        }
 #if D72X40_ROTATION != 0
         d72x40_project(&d72x40_canvas, d72x40_want, D72X40_WIDTH, D72X40_PAGES, D72X40_ROTATION);
 #endif
@@ -767,6 +808,24 @@ int zmk_display_72x40_refresh(void) {
 }
 
 static int d72x40_listener(const zmk_event_t *eh) {
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+    const struct zmk_led_pattern_state_changed *led = as_zmk_led_pattern_state_changed(eh);
+    if (led != NULL) {
+        if (atomic_test_bit(&d72x40_flags, D72X40_READY)) {
+            atomic_set(&d72x40_led_pattern, led->pattern);
+            atomic_set(&d72x40_led_brightness, led->brightness);
+            atomic_set(&d72x40_led_speed, led->speed);
+            atomic_set(&d72x40_led_changed_at_ms, (atomic_val_t)k_uptime_get_32());
+            atomic_set(&d72x40_led_splash_seen, 1);
+            k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
+                                        K_MSEC(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS));
+            d72x40_note_activity();
+            atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+            d72x40_schedule_now();
+        }
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+#endif
     const struct zmk_layer_state_changed *layer = as_zmk_layer_state_changed(eh);
 
     if (layer != NULL) {
@@ -809,6 +868,9 @@ ZMK_SUBSCRIPTION(display_72x40, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(display_72x40, zmk_position_state_changed);
 ZMK_SUBSCRIPTION(display_72x40, zmk_sensor_event);
 ZMK_SUBSCRIPTION(display_72x40, zmk_endpoint_changed);
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+ZMK_SUBSCRIPTION(display_72x40, zmk_led_pattern_state_changed);
+#endif
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 /* No endpoint change comes when the active profile connects or drops. */
 ZMK_SUBSCRIPTION(display_72x40, zmk_ble_active_profile_changed);

@@ -23,7 +23,7 @@ static int failures;
     } while (0)
 
 #define MAX_WIDTH 128
-#define MAX_PAGES 8
+#define MAX_PAGES 9
 
 struct frame {
     uint8_t buf[MAX_WIDTH * MAX_PAGES];
@@ -95,6 +95,27 @@ static bool page_is(const struct d72x40_canvas *cv, int page, int x1, const char
     }
     return memcmp(&cv->buf[(size_t)page * cv->width], &expect.buf[(size_t)page * cv->width],
                   cv->width) == 0;
+}
+
+static bool studio_mark_is(const struct d72x40_canvas *cv, int page, bool unlocked) {
+    static const uint8_t locked_icon[14] = {
+        0x00, 0x00, 0xf0, 0xfe, 0x91, 0x91, 0xd1, 0xd1,
+        0x91, 0x91, 0xfe, 0xf0, 0x00, 0x00,
+    };
+    static const uint8_t unlocked_icon[14] = {
+        0x00, 0x00, 0xe0, 0xe0, 0xa0, 0xae, 0xe1, 0xe1,
+        0xa1, 0xa1, 0xe1, 0xe1, 0x0e, 0x10,
+    };
+    const uint8_t *row = cv->buf + (size_t)page * cv->width;
+    const uint8_t *icon = unlocked ? unlocked_icon : locked_icon;
+    struct frame label;
+    frame_init(&label, cv->width, cv->pages);
+    d72x40_text(&label.cv, (int)cv->width - 39, page,
+                unlocked ? "OPEN" : "LOCK");
+    return memcmp(row + cv->width - 39,
+                  label.buf + (size_t)page * cv->width + cv->width - 39,
+                  (size_t)d72x40_text_width(4, D72X40_CELL)) == 0 &&
+           memcmp(row + cv->width - 15, icon, 14) == 0;
 }
 
 static struct d72x40_status split_status(void) {
@@ -277,10 +298,15 @@ static void test_output_line(void) {
     st.transport = D72X40_TRANSPORT_BLE;
     st.link = D72X40_LINK_UP;
     st.profile = 1;
+    st.studio_lock_available = true;
+    d72x40_render(&f.cv, &st);
+    dump(&f.cv, "Studio locked");
+    CHECK(studio_mark_is(&f.cv, 2, false));
+
     st.unlocked = true;
     d72x40_render(&f.cv, &st);
     dump(&f.cv, "Studio unlocked");
-    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_BLUETOOTH "1 " D72X40_SYM_CHECK, 67, D72X40_SYM_UNLOCKED));
+    CHECK(studio_mark_is(&f.cv, 2, true));
 }
 
 static void test_battery_line(void) {
@@ -300,21 +326,21 @@ static void test_battery_line(void) {
     st.peer_battery = 72;
     d72x40_render(&f.cv, &st);
     dump(&f.cv, "charging");
-    CHECK(page_is(&f.cv, 3, 0, "L" D72X40_SYM_BOLT "100%", 43, "R 72%"));
+    CHECK(page_is(&f.cv, 3, 0, "L100%" D72X40_SYM_BOLT, 43, "R 72%"));
 
     /* Both full: the spaces go so a cell still separates the halves. */
     st.peer_battery = 100;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L" D72X40_SYM_BOLT "100%", 43, "R100%"));
+    CHECK(page_is(&f.cv, 3, 0, "L100%" D72X40_SYM_BOLT, 43, "R100%"));
     st.charging = false;
     d72x40_render(&f.cv, &st);
     dump(&f.cv, "both full");
-    CHECK(page_is(&f.cv, 3, 0, "L100%", 43, "R100%"));
+    CHECK(page_is(&f.cv, 3, 0, "L100%", 37, "R 100%"));
 
     /* Values above 100 are clamped. */
     st.battery = 180;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L100%", 43, "R100%"));
+    CHECK(page_is(&f.cv, 3, 0, "L100%", 37, "R 100%"));
 
     /* The peripheral on external power gets a bolt of its own. */
     st.charging = false;
@@ -323,7 +349,7 @@ static void test_battery_line(void) {
     st.peer_charging = true;
     d72x40_render(&f.cv, &st);
     dump(&f.cv, "peripheral charging");
-    CHECK(page_is(&f.cv, 3, 0, "L 85%", 43, "R" D72X40_SYM_BOLT "72%"));
+    CHECK(page_is(&f.cv, 3, 0, "L 85%", 37, "R 72%" D72X40_SYM_BOLT));
 
     /* Both charging and both full: no space left to drop, so a line each. */
     st.charging = true;
@@ -331,13 +357,13 @@ static void test_battery_line(void) {
     st.peer_battery = 100;
     d72x40_render(&f.cv, &st);
     dump(&f.cv, "both charging and full");
-    CHECK(page_is(&f.cv, 3, 0, "L" D72X40_SYM_BOLT "100%", 0, NULL));
-    CHECK(page_is(&f.cv, 4, 0, "R" D72X40_SYM_BOLT "100%", 0, NULL));
+    CHECK(page_is(&f.cv, 3, 0, "L 100%" D72X40_SYM_BOLT, 0, NULL));
+    CHECK(page_is(&f.cv, 4, 0, "R 100%" D72X40_SYM_BOLT, 0, NULL));
 
     /* One space is enough to keep them side by side. */
     st.peer_charging = false;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L" D72X40_SYM_BOLT "100%", 43, "R100%"));
+    CHECK(page_is(&f.cv, 3, 0, "L100%" D72X40_SYM_BOLT, 43, "R100%"));
     st.charging = false;
     st.peer_charging = false;
     st.battery = 85;
@@ -356,7 +382,7 @@ static void test_battery_line(void) {
     CHECK(page_is(&f.cv, 3, 0, "BAT 9%", 0, NULL));
     st.charging = true;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "BAT" D72X40_SYM_BOLT "9%", 0, NULL));
+    CHECK(page_is(&f.cv, 3, 0, "BAT 9%" D72X40_SYM_BOLT, 0, NULL));
     st.battery = D72X40_BATTERY_HIDDEN;
     d72x40_render(&f.cv, &st);
     CHECK(page_is(&f.cv, 3, 0, NULL, 0, NULL));
@@ -409,12 +435,49 @@ static void test_portrait_layout(void) {
     CHECK(page_is(&f.cv, 7, 0, NULL, 0, NULL));
     CHECK(page_is(&f.cv, 8, 0, "CAPS", 0, NULL));
 
+    /* At 100%, the bolt stays after the complete number and still fits. */
+    st.battery = 100;
+    st.peer_battery = 100;
+    st.charging = true;
+    st.peer_charging = true;
+    d72x40_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 5, 0, "L100%" D72X40_SYM_BOLT, 0, NULL));
+    CHECK(page_is(&f.cv, 6, 0, "R100%" D72X40_SYM_BOLT, 0, NULL));
+
+    st.peer_battery = D72X40_BATTERY_HIDDEN;
+    d72x40_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 5, 0, "B100%" D72X40_SYM_BOLT, 0, NULL));
+
     /* A name too long for 40 columns takes two lines. */
     strcpy(st.layer, "TEMP-SCROLL");
     d72x40_render(&f.cv, &st);
     dump(&f.cv, "portrait, wrapped");
     CHECK(page_is(&f.cv, 0, 5, "TEMP-", 0, NULL));
     CHECK(page_is(&f.cv, 1, 2, "SCROLL", 0, NULL));
+}
+
+static void test_portrait_studio_lock(void) {
+    struct frame f;
+    frame_init(&f, 40, 9);
+    struct d72x40_status st = split_status();
+    st.studio_lock_available = true;
+    st.caps_lock = true;
+
+    d72x40_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 2, 0, NULL, 0, NULL));
+    CHECK(pixel(&f.cv, 30, 25)); /* closed shackle, left side */
+    CHECK(!pixel(&f.cv, 39, 25));
+    CHECK(pixel(&f.cv, 28, 28)); /* body remains in place */
+    CHECK(page_is(&f.cv, 5, 0, "L 85%", 0, NULL));
+    CHECK(page_is(&f.cv, 6, 0, "R 72%", 0, NULL));
+    CHECK(page_is(&f.cv, 8, 0, "CAPS", 0, NULL));
+
+    st.unlocked = true;
+    d72x40_render(&f.cv, &st);
+    CHECK(!pixel(&f.cv, 30, 25));
+    CHECK(pixel(&f.cv, 39, 25)); /* shackle swings right */
+    CHECK(!pixel(&f.cv, 39, 27)); /* visible gap above body */
+    CHECK(pixel(&f.cv, 28, 28));
 }
 
 static int count_lit(const struct d72x40_canvas *cv) {
@@ -621,6 +684,38 @@ static void test_redraw_costs(void) {
     CHECK(memcmp(&before.buf[2 * 72], &shown.buf[2 * 72], 3 * 72) == 0);
 }
 
+static void test_led_splash(void) {
+    struct frame portrait;
+    frame_init(&portrait, 40, 9);
+    for (uint8_t pattern = 0; pattern < 18; pattern++) {
+        CHECK(strlen(d72x40_led_pattern_name(pattern)) <= 6);
+        d72x40_render_led_splash(&portrait.cv, pattern, 100, 400);
+        int first;
+        int last;
+        CHECK(lit_extent(&portrait.cv, 0, 7, &first, &last));
+        CHECK(lit_extent(&portrait.cv, 16, 31, &first, &last));
+        CHECK(lit_extent(&portrait.cv, 40, 47, &first, &last));
+        CHECK(lit_extent(&portrait.cv, 56, 63, &first, &last));
+        CHECK(last < 40);
+    }
+    CHECK(strcmp(d72x40_led_pattern_name(255), "?") == 0);
+
+    uint8_t before[MAX_WIDTH * MAX_PAGES];
+    memcpy(before, portrait.buf, sizeof(before));
+    d72x40_render_led_splash(&portrait.cv, 17, 0, 10);
+    CHECK(memcmp(before, portrait.buf, sizeof(before)) != 0);
+
+    struct frame landscape;
+    frame_init(&landscape, 72, 5);
+    d72x40_render_led_splash(&landscape.cv, 12, 80, 120);
+    for (int page = 0; page < 5; page++) {
+        int first;
+        int last;
+        CHECK(lit_extent(&landscape.cv, page * 8, page * 8 + 7, &first, &last));
+        CHECK(last < 72);
+    }
+}
+
 int main(void) {
     test_font();
     test_text_width();
@@ -629,6 +724,7 @@ int main(void) {
     test_layer_narrow_when_wide_does_not_fit();
     test_layer_on_other_panels();
     test_portrait_layout();
+    test_portrait_studio_lock();
     test_rotation();
     test_output_line();
     test_battery_line();
@@ -636,6 +732,7 @@ int main(void) {
     test_render_is_a_pure_function();
     test_spans();
     test_redraw_costs();
+    test_led_splash();
 
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

@@ -112,6 +112,8 @@ the same panel, so the module is not built while it is on.
 | --- | --- | --- |
 | `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS` | `n` | Publish the settings below to a Studio client (needs zmk-feature-custom-settings). |
 | `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` | `30000` | The panel's timeout: dark this long after the last key, encoder or pointer report; `0` for none. |
+| `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH` | `n` | With zmk-led-patterns, briefly show the applied pattern ID/name, brightness and speed whenever one changes. Changes wake a dark panel; unchanged values do not trigger a splash. |
+| `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS` | `1800` | Splash duration in milliseconds, counted from the latest LED change. Then the normal status returns. |
 | `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` | `20` | Gathers a burst of changes into one redraw. |
 | `CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS` | `50` | How long the sync device counts as reporting after a report. |
 | `CONFIG_ZMK_DISPLAY_72X40_RETRY_MS` | `1000` | Delay before a failed write is retried (three times). |
@@ -130,8 +132,8 @@ the same panel, so the module is not built while it is on.
 | Page | Content |
 | --- | --- |
 | 0-1 | The highest active layer that is not hidden, centred: at double size when the whole name fits that way (six characters on 72 columns, three on 40), at ordinary size on one line when it does not, and over two lines - split at the last hyphen where there is one - when it is too long even for that. An unnamed layer shows `LAYER <index>`. The block is always two pages tall, so the lines below never move. |
-| 2 | `USB`, or a Bluetooth mark with the profile number and a check (connected), cross (bonded, not connected) or ring (not bonded, open for pairing). With no host selected, the preferred transport and a cross. An open padlock at the right edge while ZMK Studio is unlocked (`CONFIG_ZMK_STUDIO_LOCKING`). |
-| 3 | `L 85%` and `R 72%` on a split central with `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING`, otherwise `BAT 85%`. A bolt after a letter means that half is on external power; for the peripheral that needs [the power reporter](#a-peripheral-on-external-power). `R --` means no peripheral is connected: ZMK reports 0 both for a peripheral that has dropped and for one whose battery really is flat, so the panel asks the split transport which peripherals it is carrying, and a connected one shows its level, `0%` included. Too narrow for both halves side by side, they take a line each. |
+| 2 | `USB`, or a Bluetooth mark with the profile number and a check (connected), cross (bonded, not connected) or ring (not bonded, open for pairing). With no host selected, the preferred transport and a cross. On the rotated 40-column portrait panel, a compact 12×8 Studio padlock shares the connection line without moving other content. Its shackle opens to the right. Wider panels keep the inline icon and label. |
+| 3 | `L 85%` and `R 72%` on a split central with `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING`, otherwise `BAT 85%`. A bolt after the percentage means that half is on external power; for the peripheral that needs [the power reporter](#a-peripheral-on-external-power). `R --` means no peripheral is connected: ZMK reports 0 both for a peripheral that has dropped and for one whose battery really is flat, so the panel asks the split transport which peripherals it is carrying, and a connected one shows its level, `0%` included. Too narrow for both halves side by side, they take a line each. |
 | 4 | `CAPS` while the host's Caps Lock is on (`CONFIG_ZMK_HID_INDICATORS`). |
 
 A panel with fewer pages shows the lines that fit. The font is a 5x7 ASCII

@@ -7,15 +7,6 @@
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/kscan_mock.h>
 
-/* The board's SDL display would need a desktop; the recording one stands in. */
-&sd72x40_dc {
-    status = "disabled";
-};
-
-&input_sd72x40_touch {
-    status = "disabled";
-};
-
 / {
     keymap {
         compatible = "zmk,keymap";

@@ -81,6 +81,7 @@ struct d72x40_status {
     bool charging;
     bool peer_charging;
     bool caps_lock;
+    bool studio_lock_available;
     bool unlocked;
 };
 
@@ -205,6 +206,21 @@ static inline void d72x40_append_u8(char *buf, size_t size, uint8_t value) {
     d72x40_append(buf, size, text);
 }
 
+static inline void d72x40_append_u16(char *buf, size_t size, uint16_t value) {
+    char digits[6];
+    size_t n = 0;
+    do {
+        digits[n++] = (char)('0' + value % 10);
+        value = (uint16_t)(value / 10);
+    } while (value != 0);
+    char result[6];
+    for (size_t i = 0; i < n; i++) {
+        result[i] = digits[n - 1 - i];
+    }
+    result[n] = '\0';
+    d72x40_append(buf, size, result);
+}
+
 static inline void d72x40_append_battery(char *buf, size_t size, uint8_t level) {
     if (level == D72X40_BATTERY_UNKNOWN) {
         d72x40_append(buf, size, "--");
@@ -299,6 +315,50 @@ static inline int d72x40_render_layer(const struct d72x40_canvas *cv, const char
     return 2;
 }
 
+/* Fourteen columns give the shackle enough room to visibly swing up and away
+ * from the body. The accompanying word carries the state without relying on
+ * a tiny monochrome silhouette alone. */
+static inline void d72x40_render_studio_lock(const struct d72x40_canvas *cv, int page,
+                                             bool unlocked, int host_width) {
+    if (cv->width < 40) {
+        if (unlocked) {
+            d72x40_text(cv, (int)cv->width - D72X40_FONT_WIDTH, page, D72X40_SYM_UNLOCKED);
+        }
+        return;
+    }
+    if (cv->width == 40) {
+        static const uint8_t closed[12] = {
+            0xf0, 0x90, 0x9e, 0x91, 0x91, 0xb1,
+            0xb1, 0x91, 0x91, 0x9e, 0x90, 0xf0,
+        };
+        static const uint8_t open[12] = {
+            0xf0, 0x90, 0x90, 0x90, 0x9c, 0x92,
+            0x91, 0x91, 0x92, 0x9c, 0x91, 0x06,
+        };
+        const uint8_t *icon = unlocked ? open : closed;
+        for (int col = 0; col < 12; col++) {
+            d72x40_plot(cv, 28 + col, page, icon[col]);
+        }
+        return;
+    }
+    static const uint8_t locked_icon[14] = {
+        0x00, 0x00, 0xf0, 0xfe, 0x91, 0x91, 0xd1, 0xd1,
+        0x91, 0x91, 0xfe, 0xf0, 0x00, 0x00,
+    };
+    static const uint8_t unlocked_icon[14] = {
+        0x00, 0x00, 0xe0, 0xe0, 0xa0, 0xae, 0xe1, 0xe1,
+        0xa1, 0xa1, 0xe1, 0xe1, 0x0e, 0x10,
+    };
+    const uint8_t *icon = unlocked ? unlocked_icon : locked_icon;
+    const int x = (int)cv->width - 15;
+    if (cv->width >= 54 && host_width < (int)cv->width - 39) {
+        d72x40_text(cv, (int)cv->width - 39, page, unlocked ? "OPEN" : "LOCK");
+    }
+    for (int col = 0; col < 14; col++) {
+        d72x40_plot(cv, x + col, page, icon[col]);
+    }
+}
+
 /* The host connection on the left, Studio's lock on the right. */
 static inline int d72x40_render_output(const struct d72x40_canvas *cv, int page,
                                    const struct d72x40_status *st) {
@@ -307,7 +367,9 @@ static inline int d72x40_render_output(const struct d72x40_canvas *cv, int page,
     case D72X40_TRANSPORT_USB:
         d72x40_append(line, sizeof(line), "USB");
         if (st->link != D72X40_LINK_UP) {
-            d72x40_append(line, sizeof(line), " " D72X40_SYM_CROSS);
+            d72x40_append(line, sizeof(line),
+                          cv->width == 40 && st->studio_lock_available
+                              ? D72X40_SYM_CROSS : " " D72X40_SYM_CROSS);
         }
         break;
     case D72X40_TRANSPORT_BLE:
@@ -324,8 +386,9 @@ static inline int d72x40_render_output(const struct d72x40_canvas *cv, int page,
         break;
     }
     d72x40_text(cv, 0, page, line);
-    if (st->unlocked) {
-        d72x40_text(cv, (int)cv->width - D72X40_FONT_WIDTH, page, D72X40_SYM_UNLOCKED);
+    if (st->studio_lock_available) {
+        d72x40_render_studio_lock(cv, page, st->unlocked,
+                                 d72x40_text_width(strlen(line), D72X40_CELL));
     }
     return page + 1;
 }
@@ -343,7 +406,7 @@ struct d72x40_battery_text {
 /*
  * A split shows "L" on the left and "R" right-aligned on one line, or one
  * below the other when the panel is too narrow for both; a unibody shows one
- * "BAT". A bolt after the first letter means USB power.
+ * "BAT". A bolt after the percentage means external power.
  */
 static inline void d72x40_battery_text(const struct d72x40_canvas *cv, const struct d72x40_status *st,
                                    struct d72x40_battery_text *out) {
@@ -359,9 +422,18 @@ static inline void d72x40_battery_text(const struct d72x40_canvas *cv, const str
             out->empty = true;
             return;
         }
-        d72x40_append(out->left, sizeof(out->left), "BAT");
-        d72x40_append(out->left, sizeof(out->left), st->charging ? D72X40_SYM_BOLT : " ");
+        size_t full_len = 4 + strlen(own) + (st->charging ? 1 : 0);
+        const char *label = d72x40_text_width(full_len, D72X40_CELL) <= (int)cv->width
+                                ? "BAT" : "B";
+        d72x40_append(out->left, sizeof(out->left), label);
+        if (d72x40_text_width(strlen(label) + 1 + strlen(own) + (st->charging ? 1 : 0),
+                              D72X40_CELL) <= (int)cv->width) {
+            d72x40_append(out->left, sizeof(out->left), " ");
+        }
         d72x40_append(out->left, sizeof(out->left), own);
+        if (st->charging) {
+            d72x40_append(out->left, sizeof(out->left), D72X40_SYM_BOLT);
+        }
         return;
     }
 
@@ -369,35 +441,50 @@ static inline void d72x40_battery_text(const struct d72x40_canvas *cv, const str
     d72x40_append_battery(peer, sizeof(peer), st->peer_battery);
 
     /*
-     * A bolt after the letter says that half is on external power, and takes
-     * the place of the space. Keep at least a cell between the halves: when
-     * they would come closer, the remaining spaces go, so that "L 100%"
-     * "R 100%" become "L100%" "R100%", and when even that is too wide they
-     * take a line each.
+     * Keep the bolt after its percentage. First remove the left label's space,
+     * then the right label's space if needed. If the values still do not fit
+     * side by side, stack them and restore each space where that line fits.
      */
     bool has_own = own[0] != '\0';
-    size_t left_len = has_own ? 2 + strlen(own) : 0;
-    size_t right_len = 2 + strlen(peer);
-    int spaces = (has_own && !st->charging ? 1 : 0) + (st->peer_charging ? 0 : 1);
-    int side_by_side = d72x40_text_width(left_len, D72X40_CELL) + D72X40_CELL +
-                       d72x40_text_width(right_len, D72X40_CELL);
-    bool compact = has_own && side_by_side > (int)cv->width;
-
-    if (compact) {
-        /* Every space that can go is worth a cell. */
-        out->stacked = side_by_side - spaces * D72X40_CELL > (int)cv->width;
+    size_t left_len = has_own ? 2 + strlen(own) + (st->charging ? 1 : 0) : 0;
+    size_t right_len = 2 + strlen(peer) + (st->peer_charging ? 1 : 0);
+    bool left_space = true;
+    bool right_space = true;
+    int total = d72x40_text_width(left_len + right_len + (has_own ? 1 : 0), D72X40_CELL);
+    if (has_own && total > (int)cv->width) {
+        left_space = false;
+        total -= D72X40_CELL;
     }
-
-    const char *gap = compact && !out->stacked ? "" : " ";
+    if (has_own && total > (int)cv->width) {
+        right_space = false;
+        total -= D72X40_CELL;
+    }
+    out->stacked = has_own && total > (int)cv->width;
+    if (out->stacked) {
+        left_space = d72x40_text_width(left_len, D72X40_CELL) <= (int)cv->width;
+        right_space = d72x40_text_width(right_len, D72X40_CELL) <= (int)cv->width;
+    } else if (!has_own && d72x40_text_width(right_len, D72X40_CELL) > (int)cv->width) {
+        right_space = false;
+    }
 
     if (has_own) {
         d72x40_append(out->left, sizeof(out->left), "L");
-        d72x40_append(out->left, sizeof(out->left), st->charging ? D72X40_SYM_BOLT : gap);
+        if (left_space) {
+            d72x40_append(out->left, sizeof(out->left), " ");
+        }
         d72x40_append(out->left, sizeof(out->left), own);
+        if (st->charging) {
+            d72x40_append(out->left, sizeof(out->left), D72X40_SYM_BOLT);
+        }
     }
     d72x40_append(out->right, sizeof(out->right), "R");
-    d72x40_append(out->right, sizeof(out->right), st->peer_charging ? D72X40_SYM_BOLT : gap);
+    if (right_space) {
+        d72x40_append(out->right, sizeof(out->right), " ");
+    }
     d72x40_append(out->right, sizeof(out->right), peer);
+    if (st->peer_charging) {
+        d72x40_append(out->right, sizeof(out->right), D72X40_SYM_BOLT);
+    }
 }
 
 static inline int d72x40_battery_pages(const struct d72x40_canvas *cv, const struct d72x40_status *st) {
@@ -465,6 +552,45 @@ static inline void d72x40_render(const struct d72x40_canvas *cv, const struct d7
     }
     if (page < (int)cv->pages) {
         (void)d72x40_render_indicators(cv, page, st);
+    }
+}
+
+/* Short names fit the 40-column portrait canvas without hiding the pattern ID. */
+static inline const char *d72x40_led_pattern_name(uint8_t pattern) {
+    static const char *const names[] = {
+        "STEADY", "BREATH", "HEART", "BLINK", "FAST", "TRIPLE",
+        "SOS", "CANDLE", "SAW", "BEACON", "SLOW", "STROBE",
+        "DBLBCN", "LONG", "SPARK", "COUNT", "RIPPLE", "FADE",
+    };
+    return pattern < sizeof(names) / sizeof(names[0]) ? names[pattern] : "?";
+}
+
+/* Temporary LED settings view; all three live values remain visible together. */
+static inline void d72x40_render_led_splash(const struct d72x40_canvas *cv, uint8_t pattern,
+                                           uint8_t brightness, uint16_t speed) {
+    d72x40_clear(cv);
+    char id[8] = "P";
+    d72x40_append_u8(id, sizeof(id), pattern);
+    char level[8] = "B";
+    d72x40_append_u8(level, sizeof(level), brightness);
+    d72x40_append(level, sizeof(level), "%");
+    char rate[8] = "S";
+    d72x40_append_u16(rate, sizeof(rate), speed);
+    d72x40_append(rate, sizeof(rate), "%");
+
+    if (cv->width < 66 && cv->pages >= 7) {
+        d72x40_text_centred(cv, 0, "LED", 3);
+        d72x40_text_centred(cv, 16, id, strlen(id));
+        d72x40_text_centred(cv, 24, d72x40_led_pattern_name(pattern),
+                            strlen(d72x40_led_pattern_name(pattern)));
+        d72x40_text_centred(cv, 40, level, strlen(level));
+        d72x40_text_centred(cv, 56, rate, strlen(rate));
+    } else {
+        d72x40_text_centred(cv, 0, "LED", 3);
+        d72x40_text(cv, 0, 1, id);
+        d72x40_text(cv, 0, 2, d72x40_led_pattern_name(pattern));
+        d72x40_text(cv, 0, 3, level);
+        d72x40_text(cv, 0, 4, rate);
     }
 }
 

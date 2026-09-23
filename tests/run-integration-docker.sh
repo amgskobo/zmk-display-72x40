@@ -25,4 +25,6 @@ docker run --rm \
     --volume "$repo_root:/src:ro" \
     ${workspace[@]+"${workspace[@]}"} \
     "$image" \
-    /bin/bash /src/tests/integration/run.sh "$@"
+    /bin/bash -lc \
+    'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends pkg-config libsdl2-dev >/dev/null && exec /bin/bash /src/tests/integration/run.sh "$@"' \
+    bash "$@"

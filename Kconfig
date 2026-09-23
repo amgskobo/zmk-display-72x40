@@ -35,6 +35,20 @@ config ZMK_DISPLAY_72X40
 
 if ZMK_DISPLAY_72X40
 
+config ZMK_DISPLAY_72X40_LED_SPLASH
+    bool "Show LED settings briefly when they change"
+    depends on ZMK_LED_PATTERNS
+    help
+      Shows the applied LED pattern, brightness and speed when a key or Studio
+      changes them, then returns to the normal status panel. The LED module
+      must be present; panels without it retain their existing behavior.
+
+config ZMK_DISPLAY_72X40_LED_SPLASH_MS
+    int "Time to show changed LED settings (ms)"
+    default 1800
+    range 500 10000
+    depends on ZMK_DISPLAY_72X40_LED_SPLASH
+
 config ZMK_DISPLAY_72X40_BLANK_AFTER_MS
     int "Switch the panel off this long after the last key, encoder or pointer (ms)"
     default 30000
