@@ -112,6 +112,8 @@ unibody キーボード、または split の central(keymap を持つ側)に:
 | --- | --- | --- |
 | `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS` | `n` | 下記の設定を Studio クライアントに公開します(zmk-feature-custom-settings が必要)。 |
 | `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` | `30000` | パネルの消灯タイマー。最後のキー・エンコーダー・ポインター操作からこの時間で消灯します。`0` で無効。 |
+| `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH` | `n` | zmk-led-patterns と組み合わせ、パターン ID・名前・明るさ・速度の変更時に一時表示します。消灯中も変更時に点灯し、値が変わらなければ表示しません。 |
+| `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS` | `1800` | LED の最後の変更から通常表示へ戻るまでの時間 (ms)。 |
 | `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` | `20` | 連続した変化を 1 回の再描画にまとめる待ち時間。 |
 | `CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS` | `50` | 同期デバイスがレポート後「レポート中」とみなされる時間。 |
 | `CONFIG_ZMK_DISPLAY_72X40_RETRY_MS` | `1000` | 書き込み失敗時の再試行間隔(3 回まで)。 |
