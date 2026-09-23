@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  *
  * Publishes the panel's run-time settings through zmk-feature-custom-settings:
- * its blank timeout and its contrast. A Studio client lists and edits them
+ * its blank timeout, contrast and optional LED splash duration. A Studio client lists and edits them
  * under the module's own heading, with no page of its own.
  *
  * Register a subsystem to own the namespace, register the values, listen for
@@ -57,6 +57,8 @@ BUILD_ASSERT(sizeof(D72X40_SETTING_KEY("blank_after_s")) <= CONFIG_ZMK_CUSTOM_SE
              "setting key \"" D72X40_SETTING_KEY("blank_after_s") "\" is too long");
 BUILD_ASSERT(sizeof(D72X40_STORAGE_NAME("blank_after_s")) <= SETTINGS_MAX_NAME_LEN,
              "setting key \"" D72X40_SETTING_KEY("blank_after_s") "\" is too long to store under");
+BUILD_ASSERT(sizeof(D72X40_STORAGE_NAME("led_splash_ms")) <= SETTINGS_MAX_NAME_LEN,
+             "LED splash setting key is too long to store under");
 
 static bool d72x40_namespace_handler(const zmk_custom_CallRequest *request,
                                  pb_callback_t *encode_response);
@@ -106,6 +108,12 @@ D72X40_SETTING(d72x40_cs_contrast, "contrast", ZMK_CUSTOM_SETTING_VALUE_TYPE_INT
            ZMK_CUSTOM_SETTING_VALUE_INT32(DT_PROP_OR(D72X40_NODE, contrast, 128)),
            ZMK_CUSTOM_SETTING_RANGE_INT32(0, 255))
 
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+D72X40_SETTING(d72x40_cs_led_splash, "led_splash_ms", ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32,
+           ZMK_CUSTOM_SETTING_VALUE_INT32(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS),
+           ZMK_CUSTOM_SETTING_RANGE_INT32(0, 10000))
+#endif
+
 static bool d72x40_read_int32(const struct zmk_custom_setting *setting, int32_t *out) {
     struct zmk_custom_setting_value value;
 
@@ -127,6 +135,11 @@ static void d72x40_apply_settings(void) {
     if (d72x40_read_int32(&d72x40_cs_contrast, &number)) {
         zmk_display_72x40_set_contrast((uint8_t)CLAMP(number, 0, 255));
     }
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+    if (d72x40_read_int32(&d72x40_cs_led_splash, &number)) {
+        zmk_display_72x40_set_led_splash_ms((uint32_t)CLAMP(number, 0, 10000));
+    }
+#endif
 }
 
 static int d72x40_settings_event_cb(const zmk_event_t *eh) {
@@ -136,7 +149,11 @@ static int d72x40_settings_event_cb(const zmk_event_t *eh) {
      * Re-reading both is simpler than working out which one moved, and the
      * setters ignore a value they already have. */
     if (changed != NULL && changed->setting != &d72x40_cs_blank_after &&
-        changed->setting != &d72x40_cs_contrast) {
+        changed->setting != &d72x40_cs_contrast
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+        && changed->setting != &d72x40_cs_led_splash
+#endif
+    ) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 

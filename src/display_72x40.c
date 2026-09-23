@@ -239,6 +239,7 @@ static atomic_t d72x40_led_brightness;
 static atomic_t d72x40_led_speed;
 static atomic_t d72x40_led_changed_at_ms;
 static atomic_t d72x40_led_splash_seen;
+static atomic_t d72x40_led_splash_ms = ATOMIC_INIT(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS);
 
 static void d72x40_led_splash_handler(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(d72x40_led_splash_work, d72x40_led_splash_handler);
@@ -246,9 +247,10 @@ static K_WORK_DELAYABLE_DEFINE(d72x40_led_splash_work, d72x40_led_splash_handler
 static void d72x40_led_splash_handler(struct k_work *work) {
     ARG_UNUSED(work);
     const uint32_t elapsed = k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_led_changed_at_ms);
-    if (elapsed < CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS) {
+    const uint32_t duration = (uint32_t)atomic_get(&d72x40_led_splash_ms);
+    if (duration != 0 && elapsed < duration) {
         k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
-                                    K_MSEC(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS - elapsed));
+                                    K_MSEC(duration - elapsed));
         return;
     }
     atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
@@ -265,12 +267,29 @@ static void d72x40_schedule_now(void) {
 }
 
 /*
- * The two values that can change while the keyboard runs: the panel's timeout
- * and its contrast. Each starts at its build-time default and is changed
+ * The panel's timeout, contrast and optional LED splash duration can change
+ * while the keyboard runs. Each starts at its build-time default and is changed
  * through the setters in display_72x40.h - display_72x40_custom_settings.c calls
  * them for a Studio client - and read where it matters rather than latched.
  */
 static atomic_t d72x40_blank_after_ms = ATOMIC_INIT(CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS);
+
+void zmk_display_72x40_set_led_splash_ms(uint32_t ms) {
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+    ms = MIN(ms, 10000U);
+    if ((uint32_t)atomic_set(&d72x40_led_splash_ms, (atomic_val_t)ms) == ms) {
+        return;
+    }
+    if (ms == 0) {
+        (void)k_work_cancel_delayable(&d72x40_led_splash_work);
+        atomic_set(&d72x40_led_splash_seen, 0);
+    }
+    atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+    d72x40_schedule_now();
+#else
+    ARG_UNUSED(ms);
+#endif
+}
 /* The contrast asked for, and the one the panel was last set to; -1 is
  * "never", which is where a node without a contrast property starts. */
 static atomic_t d72x40_contrast_want = ATOMIC_INIT(DT_PROP_OR(D72X40_NODE, contrast, -1));
@@ -688,8 +707,9 @@ static void d72x40_work_handler(struct k_work *work) {
     if (atomic_test_and_clear_bit(&d72x40_flags, D72X40_REDRAW)) {
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
         if (atomic_get(&d72x40_led_splash_seen) != 0 &&
+            atomic_get(&d72x40_led_splash_ms) != 0 &&
             k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_led_changed_at_ms) <
-                CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS) {
+                (uint32_t)atomic_get(&d72x40_led_splash_ms)) {
             d72x40_render_led_splash(&d72x40_canvas,
                                     (uint8_t)atomic_get(&d72x40_led_pattern),
                                     (uint8_t)atomic_get(&d72x40_led_brightness),
@@ -811,14 +831,15 @@ static int d72x40_listener(const zmk_event_t *eh) {
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
     const struct zmk_led_pattern_state_changed *led = as_zmk_led_pattern_state_changed(eh);
     if (led != NULL) {
-        if (atomic_test_bit(&d72x40_flags, D72X40_READY)) {
+        if (atomic_test_bit(&d72x40_flags, D72X40_READY) &&
+            atomic_get(&d72x40_led_splash_ms) != 0) {
             atomic_set(&d72x40_led_pattern, led->pattern);
             atomic_set(&d72x40_led_brightness, led->brightness);
             atomic_set(&d72x40_led_speed, led->speed);
             atomic_set(&d72x40_led_changed_at_ms, (atomic_val_t)k_uptime_get_32());
             atomic_set(&d72x40_led_splash_seen, 1);
             k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
-                                        K_MSEC(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS));
+                                        K_MSEC((uint32_t)atomic_get(&d72x40_led_splash_ms)));
             d72x40_note_activity();
             atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
             d72x40_schedule_now();

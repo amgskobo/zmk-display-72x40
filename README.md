@@ -113,7 +113,7 @@ the same panel, so the module is not built while it is on.
 | `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS` | `n` | Publish the settings below to a Studio client (needs zmk-feature-custom-settings). |
 | `CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS` | `30000` | The panel's timeout: dark this long after the last key, encoder or pointer report; `0` for none. |
 | `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH` | `n` | With zmk-led-patterns, briefly show the applied pattern ID/name, brightness and speed whenever one changes. Changes wake a dark panel; unchanged values do not trigger a splash. |
-| `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS` | `1800` | Splash duration in milliseconds, counted from the latest LED change. Then the normal status returns. |
+| `CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS` | `1800` | Initial splash duration in milliseconds. With Studio integration it can be changed at run time; `0` disables the splash. |
 | `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` | `20` | Gathers a burst of changes into one redraw. |
 | `CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS` | `50` | How long the sync device counts as reporting after a report. |
 | `CONFIG_ZMK_DISPLAY_72X40_RETRY_MS` | `1000` | Delay before a failed write is retried (three times). |
@@ -290,7 +290,8 @@ darkened.
 With `CONFIG_ZMK_DISPLAY_72X40_CUSTOM_SETTINGS=y` a Studio client edits them
 through [zmk-feature-custom-settings](https://github.com/cormoran/zmk-feature-custom-settings),
 under the `amgskobo__display` heading: `display.blank_after_s` (seconds,
-0-600, 0 for none) and `display.contrast`. The keys have a
+0-600, 0 for none), `display.contrast`, and, when LED splash is compiled in,
+`display.led_splash_ms` (0-10000 ms, 0 disables it). The keys have a
 fixed prefix rather than the node's name - there is only ever one panel - so
 stored values survive the node being renamed. It needs the patched ZMK that
 carries the custom Studio RPC; upstream ZMK builds none of it.

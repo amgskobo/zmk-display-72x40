@@ -45,3 +45,6 @@ void zmk_display_72x40_set_blank_after_ms(uint32_t ms);
  * @brief Set the panel's contrast (brightness), 0 to 255.
  */
 void zmk_display_72x40_set_contrast(uint8_t contrast);
+
+/** Set LED-change splash duration (0 disables it; maximum 10000 ms). */
+void zmk_display_72x40_set_led_splash_ms(uint32_t ms);

@@ -48,6 +48,9 @@ config ZMK_DISPLAY_72X40_LED_SPLASH_MS
     default 1800
     range 500 10000
     depends on ZMK_DISPLAY_72X40_LED_SPLASH
+    help
+      Initial duration of the LED-change splash. With custom Studio settings
+      enabled it can be changed at run time; 0 in Studio disables the splash.
 
 config ZMK_DISPLAY_72X40_BLANK_AFTER_MS
     int "Switch the panel off this long after the last key, encoder or pointer (ms)"
@@ -75,7 +78,8 @@ config ZMK_DISPLAY_72X40_CUSTOM_SETTINGS
     depends on ZMK_CUSTOM_SETTINGS_STUDIO_RPC
     help
       Registers the panel's blank timeout (display.blank_after_s, in seconds,
-      0 for none) and its contrast (display.contrast, 0-255) in the
+      0 for none), contrast (display.contrast, 0-255), and, when LED splash is
+      built in, its duration (display.led_splash_ms, 0-10000, 0 disables) in the
       cross-module custom settings registry, so a Studio client lists and
       edits them under the amgskobo__display heading with no page of its
       own. The defaults are the build's own values:
