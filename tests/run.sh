@@ -23,6 +23,8 @@ warnings=(-std=c11 -Wall -Wextra -Werror -pedantic -Wconversion -Wsign-conversio
 
 printf '#include <zmk-display-72x40/display_72x40_core.h>\n' >"$build_dir/header.c"
 cc "${warnings[@]}" -fsyntax-only -I"$repo_root/include" "$build_dir/header.c"
+printf '#include <zmk-display-72x40/display_72x40_splash.h>\n' >"$build_dir/splash-header.c"
+cc "${warnings[@]}" -fsyntax-only -I"$repo_root/include" "$build_dir/splash-header.c"
 
 variants=(
     "optimised:-O2"
@@ -39,4 +41,8 @@ for variant in "${variants[@]}"; do
         "$repo_root/tests/test_display_72x40_core.c" \
         -o "$build_dir/test-$label"
     "$build_dir/test-$label"
+    cc "${warnings[@]}" "${flags[@]}" -I"$repo_root/include" \
+        "$repo_root/tests/test_display_72x40_splash.c" \
+        -o "$build_dir/splash-$label"
+    "$build_dir/splash-$label"
 done

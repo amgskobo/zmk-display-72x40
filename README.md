@@ -302,7 +302,7 @@ The module builds against upstream ZMK `main` and against the DYA Studio fork
 (`cormoran/zmk` `main+dya`). It uses only Zephyr's display and input APIs and
 ZMK's public event and state functions.
 
-- `tests/run.sh` builds the drawing core on the host with strict warnings,
+- `tests/run.sh` builds the drawing core and LED splash timing checks on the host with strict warnings,
   optimised and under ASan/UBSan, checks the layout, the font and the run
   finder, and checks that the generated font header matches its source. Set
   `D72X40_TEST_DUMP=1` to print the frames the tests draw.

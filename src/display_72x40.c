@@ -76,6 +76,7 @@
 #include <zmk-display-72x40/display_72x40_core.h>
 
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
+#include <zmk-display-72x40/display_72x40_splash.h>
 #include <zmk-led-patterns/events/state_changed.h>
 #endif
 
@@ -246,11 +247,12 @@ static K_WORK_DELAYABLE_DEFINE(d72x40_led_splash_work, d72x40_led_splash_handler
 
 static void d72x40_led_splash_handler(struct k_work *work) {
     ARG_UNUSED(work);
-    const uint32_t elapsed = k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_led_changed_at_ms);
     const uint32_t duration = (uint32_t)atomic_get(&d72x40_led_splash_ms);
-    if (duration != 0 && elapsed < duration) {
+    const uint32_t remaining = d72x40_splash_remaining_ms(
+        k_uptime_get_32(), (uint32_t)atomic_get(&d72x40_led_changed_at_ms), duration);
+    if (remaining != 0U) {
         k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
-                                    K_MSEC(duration - elapsed));
+                                    K_MSEC(remaining));
         return;
     }
     atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
@@ -708,8 +710,9 @@ static void d72x40_work_handler(struct k_work *work) {
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
         if (atomic_get(&d72x40_led_splash_seen) != 0 &&
             atomic_get(&d72x40_led_splash_ms) != 0 &&
-            k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_led_changed_at_ms) <
-                (uint32_t)atomic_get(&d72x40_led_splash_ms)) {
+            d72x40_splash_remaining_ms(k_uptime_get_32(),
+                                       (uint32_t)atomic_get(&d72x40_led_changed_at_ms),
+                                       (uint32_t)atomic_get(&d72x40_led_splash_ms)) != 0U) {
             d72x40_render_led_splash(&d72x40_canvas,
                                     (uint8_t)atomic_get(&d72x40_led_pattern),
                                     (uint8_t)atomic_get(&d72x40_led_brightness),

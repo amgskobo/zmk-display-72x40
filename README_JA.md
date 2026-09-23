@@ -294,7 +294,7 @@ upstream ZMK の `main` と、DYA Studio フォーク(`cormoran/zmk` の `main+d
 の両方でビルドできます。使うのは Zephyr の display API と input API、ZMK の
 公開イベントと状態取得関数だけです。
 
-- `tests/run.sh` は描画コアをホストで厳しい警告付き、最適化ありと ASan/UBSan
+- `tests/run.sh` は描画コアと LED 一時表示の時間境界をホストで厳しい警告付き、最適化ありと ASan/UBSan
   付きでビルドし、レイアウト・フォント・変化区間の検出を確認し、生成済みの
   フォントヘッダーがソースと一致することも確認します。`D72X40_TEST_DUMP=1` で
   テストが描いたフレームを表示します。
