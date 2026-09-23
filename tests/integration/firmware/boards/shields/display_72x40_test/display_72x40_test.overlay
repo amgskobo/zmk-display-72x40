@@ -2,7 +2,7 @@
  * Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * A 72x40 72x40 SSD1306 on the XIAO's I2C pins, sharing the bus with an
+ * A 72x40 SSD1306 on the XIAO's I2C pins, sharing the bus with an
  * input device, as the module is meant to be used.
  */
 
