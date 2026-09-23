@@ -307,7 +307,8 @@ ZMK's public event and state functions.
   finder, and checks that the generated font header matches its source. Set
   `D72X40_TEST_DUMP=1` to print the frames the tests draw.
 - `tests/run-integration-docker.sh upstream|dya` builds a firmware fixture
-  with an SSD1306 on a XIAO BLE and runs a native_sim test that drives ZMK
+  with an SSD1306 on a XIAO BLE; the DYA variant also includes zmk-led-patterns
+  and checks the LED splash Studio key. Both run a native_sim test that drives ZMK
   events against a recording display and checks what reaches the panel.
 
 The font lives in `scripts/font5x7.txt`; `scripts/gen_font.py` regenerates

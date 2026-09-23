@@ -7,8 +7,28 @@
  */
 
 #include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 #include <physical_layouts.dtsi>
 #include <dt-bindings/zmk/matrix_transform.h>
+
+&pinctrl {
+    display_test_pwm_default: display_test_pwm_default {
+        group1 { psels = <NRF_PSEL(PWM_OUT0, 0, 2)>; };
+    };
+    display_test_pwm_sleep: display_test_pwm_sleep {
+        group1 {
+            psels = <NRF_PSEL(PWM_OUT0, 0, 2)>;
+            low-power-enable;
+        };
+    };
+};
+
+&pwm0 {
+    status = "okay";
+    pinctrl-0 = <&display_test_pwm_default>;
+    pinctrl-1 = <&display_test_pwm_sleep>;
+    pinctrl-names = "default", "sleep";
+};
 
 &i2c1 {
     status = "okay";
@@ -31,8 +51,14 @@
 
 / {
     chosen {
+        zmk,backlight = &display_test_led;
         zmk,kscan = &display_72x40_test_kscan;
         zmk,physical-layout = &display_72x40_test_layout;
+    };
+
+    display_test_led: pwmleds {
+        compatible = "pwm-leds";
+        pwm_led_0 { pwms = <&pwm0 0 PWM_MSEC(10) PWM_POLARITY_NORMAL>; };
     };
 
     display_72x40_test_kscan: display_72x40_test_kscan {

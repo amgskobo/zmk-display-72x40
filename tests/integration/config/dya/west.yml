@@ -5,6 +5,8 @@ manifest:
   remotes:
     - name: cormoran
       url-base: https://github.com/cormoran
+    - name: amgskobo
+      url-base: https://github.com/amgskobo
   projects:
     - name: zmk
       remote: cormoran
@@ -13,6 +15,10 @@ manifest:
       clone-depth: 1
     - name: zmk-feature-custom-settings
       remote: cormoran
+      revision: main
+      clone-depth: 1
+    - name: zmk-led-patterns
+      remote: amgskobo
       revision: main
       clone-depth: 1
   self:

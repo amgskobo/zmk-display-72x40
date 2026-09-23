@@ -298,8 +298,9 @@ upstream ZMK の `main` と、DYA Studio フォーク(`cormoran/zmk` の `main+d
   付きでビルドし、レイアウト・フォント・変化区間の検出を確認し、生成済みの
   フォントヘッダーがソースと一致することも確認します。`D72X40_TEST_DUMP=1` で
   テストが描いたフレームを表示します。
-- `tests/run-integration-docker.sh upstream|dya` は XIAO BLE と SSD1306 の
-  ファームウェアをビルドし、記録用ディスプレイに対して ZMK のイベントを流す
+- `tests/run-integration-docker.sh upstream|dya` は XIAO BLE・SSD1306 の
+  ファームウェアをビルドします。DYA 版では zmk-led-patterns も加え、LED 一時表示の
+  Studio キー登録を確認します。記録用ディスプレイに対して ZMK のイベントを流す
   native_sim テストで、パネルに届く内容を確認します。
 
 フォントは `scripts/font5x7.txt` にあり、`scripts/gen_font.py` がそこから

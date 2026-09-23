@@ -1,0 +1,12 @@
+/* Copyright (c) 2026 amgskobo
+ * SPDX-License-Identifier: MIT
+ */
+
+/ {
+    behaviors {
+        led_pattern: led_pattern {
+            compatible = "zmk,behavior-led-pattern";
+            #binding-cells = <1>;
+        };
+    };
+};

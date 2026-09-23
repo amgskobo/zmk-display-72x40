@@ -45,9 +45,12 @@ export ZEPHYR_BASE="$work_dir/zephyr"
 mkdir -p "$work_dir/build"
 
 cmake_args=()
+extra_modules="/src;$tests_dir/firmware"
 peripheral_conf="$tests_dir/peripheral.conf"
 if [ "$variant" = dya ]; then
-    cmake_args+=("-DEXTRA_CONF_FILE=$tests_dir/studio.conf;$tests_dir/relay.conf;$tests_dir/custom-settings.conf")
+    cmake_args+=("-DEXTRA_CONF_FILE=$tests_dir/studio.conf;$tests_dir/relay.conf;$tests_dir/custom-settings.conf"
+                 "-DEXTRA_DTC_OVERLAY_FILE=$tests_dir/led-splash.overlay")
+    extra_modules="$extra_modules;$work_dir/zmk-led-patterns"
     peripheral_conf="$peripheral_conf;$tests_dir/relay.conf"
 fi
 
@@ -55,7 +58,7 @@ firmware_dir="$work_dir/build/firmware"
 rm -rf "$firmware_dir"
 
 if ! west build -s "$work_dir/zmk/app" -d "$firmware_dir" -b xiao_ble/nrf52840/zmk -- \
-    -DZMK_EXTRA_MODULES="/src;$tests_dir/firmware" \
+    -DZMK_EXTRA_MODULES="$extra_modules" \
     -DSHIELD=display_72x40_test \
     "${cmake_args[@]}" >"$firmware_dir.log" 2>&1; then
     echo "FAILED: $variant firmware fixture did not build"
@@ -73,6 +76,14 @@ for symbol in CONFIG_ZMK_DISPLAY_72X40 CONFIG_SSD1306 CONFIG_ZMK_LOW_PRIORITY_WO
         exit 1
     fi
 done
+if [ "$variant" = dya ]; then
+    for symbol in CONFIG_ZMK_LED_PATTERNS CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH; do
+        grep -q "^$symbol=y" "$firmware_config" || {
+            echo "FAILED: $variant firmware fixture lacks $symbol"
+            exit 1
+        }
+    done
+fi
 for symbol in CONFIG_ZMK_DISPLAY CONFIG_LVGL; do
     if grep -q "^$symbol=y" "$firmware_config"; then
         echo "FAILED: $variant firmware fixture pulled in $symbol"
@@ -95,7 +106,7 @@ if [ "$variant" = dya ]; then
     # The settings a Studio client lists, under the module's own heading.
     # The keys are strings of their own; the subsystem id is stored where
     # `strings` joins it to the bytes in front, so it is matched anywhere.
-    for text in display.blank_after_s display.contrast; do
+    for text in display.blank_after_s display.contrast display.led_splash_ms; do
         if ! grep -Fxq "$text" "$firmware_dir/zephyr/strings.txt"; then
             echo "FAILED: $variant firmware fixture lacks the setting $text"
             exit 1
