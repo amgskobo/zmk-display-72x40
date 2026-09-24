@@ -306,8 +306,9 @@ ZMK's public event and state functions.
   optimised and under ASan/UBSan, checks the layout, the font and the run
   finder, and checks that the generated font header matches its source. Set
   `D72X40_TEST_DUMP=1` to print the frames the tests draw.
-  CI requires 100% line and branch coverage of the small splash-timing helper;
-  this is not a coverage claim for the whole display driver.
+  CI requires 100% line and branch coverage of both the pure drawing core and
+  the small splash-timing helper; this is not a coverage claim for the whole
+  Zephyr-facing display driver.
 - `tests/run-integration-docker.sh upstream|dya` builds a firmware fixture
   with an SSD1306 on a XIAO BLE; the DYA variant also includes zmk-led-patterns
   and checks the LED splash Studio key. Both run a native_sim test that drives ZMK

@@ -716,6 +716,66 @@ static void test_led_splash(void) {
     }
 }
 
+static void test_small_canvas_and_offscreen_guards(void) {
+    struct frame f;
+    frame_init(&f, 24, 2);
+    d72x40_plot(&f.cv, -1, 0, 0xff);
+    d72x40_plot(&f.cv, 24, 0, 0xff);
+    d72x40_plot(&f.cv, 0, -1, 0xff);
+    d72x40_plot(&f.cv, 0, 2, 0xff);
+    CHECK(f.buf[0] == 0);
+
+    d72x40_render_studio_lock(&f.cv, 0, false, 0);
+    CHECK(f.buf[23] == 0);
+    d72x40_render_studio_lock(&f.cv, 0, true, 0);
+    CHECK(f.buf[23] != 0);
+
+    CHECK(!d72x40_canvas_pixel(&f.cv, -1, 0));
+    CHECK(!d72x40_canvas_pixel(&f.cv, 24, 0));
+    CHECK(!d72x40_canvas_pixel(&f.cv, 0, -1));
+    CHECK(!d72x40_canvas_pixel(&f.cv, 0, 16));
+
+    struct d72x40_status st = split_status();
+    st.battery = D72X40_BATTERY_HIDDEN;
+    struct d72x40_battery_text battery;
+    d72x40_battery_text(&f.cv, &st, &battery);
+    CHECK(!battery.stacked);
+    CHECK(strcmp(battery.right, "R72%") == 0);
+
+    d72x40_text_n(&f.cv, 0, 0, "AB", 1);
+    d72x40_text_tall(&f.cv, 0, 0, "AB", 1, false);
+    d72x40_text_tall(&f.cv, 0, 0, "A", 2, false);
+    d72x40_text_row(&f.cv, 0, 1, "AB", 1);
+    d72x40_text_row(&f.cv, 0, 1, "A", 2);
+    char clipped[2] = "";
+    d72x40_append(clipped, sizeof(clipped), "AB");
+    CHECK(strcmp(clipped, "A") == 0);
+    CHECK(d72x40_wrap_at("A-123456789", 11, 4) == 4);
+
+    frame_init(&f, 52, 2);
+    d72x40_render_studio_lock(&f.cv, 0, false, 0);
+    frame_init(&f, 72, 2);
+    d72x40_render_studio_lock(&f.cv, 0, false, 72);
+    st.transport = D72X40_TRANSPORT_USB;
+    st.link = D72X40_LINK_DOWN;
+    d72x40_render_output(&f.cv, 0, &st);
+    st.link = D72X40_LINK_UP;
+    d72x40_render_output(&f.cv, 0, &st);
+    frame_init(&f, 40, 2);
+    st.link = D72X40_LINK_DOWN;
+    st.studio_lock_available = true;
+    d72x40_render_output(&f.cv, 0, &st);
+    st.studio_lock_available = false;
+    d72x40_render_output(&f.cv, 0, &st);
+
+    frame_init(&f, 24, 1);
+    st = split_status();
+    CHECK(d72x40_render_battery(&f.cv, 0, &st) == 2);
+
+    frame_init(&f, 40, 5);
+    d72x40_render_led_splash(&f.cv, 1, 100, 100);
+}
+
 int main(void) {
     test_font();
     test_text_width();
@@ -733,6 +793,7 @@ int main(void) {
     test_spans();
     test_redraw_costs();
     test_led_splash();
+    test_small_canvas_and_offscreen_guards();
 
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

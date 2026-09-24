@@ -48,6 +48,17 @@ for variant in "${variants[@]}"; do
 done
 
 cc "${warnings[@]}" -O0 --coverage -I"$repo_root/include" \
+    "$repo_root/tests/test_display_72x40_core.c" -o "$build_dir/core-coverage"
+"$build_dir/core-coverage"
+core_coverage=$(cd "$build_dir" && gcov -b -c \
+    -o "$build_dir/core-coverage-test_display_72x40_core.gcno" \
+    "$repo_root/tests/test_display_72x40_core.c")
+printf '%s\n' "$core_coverage"
+core_helper=$(printf '%s\n' "$core_coverage" | grep -F -A4 '/display_72x40_core.h')
+printf '%s\n' "$core_helper" | grep -Fq 'Lines executed:100.00%'
+printf '%s\n' "$core_helper" | grep -Fq 'Taken at least once:100.00%'
+
+cc "${warnings[@]}" -O0 --coverage -I"$repo_root/include" \
     "$repo_root/tests/test_display_72x40_splash.c" -o "$build_dir/splash-coverage"
 "$build_dir/splash-coverage"
 coverage=$(cd "$build_dir" && gcov -b -c -o "$build_dir/splash-coverage-test_display_72x40_splash.gcno" \
