@@ -300,8 +300,6 @@ upstream ZMK の `main` と、DYA Studio フォーク(`cormoran/zmk` の `main+d
   テストが描いたフレームを表示します。
   CI は純粋な描画コアと一時表示の時間ヘルパーに行・分岐とも 100% を要求します。
   Zephyr 側の表示ドライバ全体のカバレッジを意味するものではありません。
-  小さな一時表示時間 helper は行・分岐カバレッジ 100% を CI 条件にしますが、
-  ディスプレイドライバ全体の 100% を意味しません。
 - `tests/run-integration-docker.sh upstream|dya` は XIAO BLE・SSD1306 の
   ファームウェアをビルドします。DYA 版では zmk-led-patterns も加え、LED 一時表示の
   Studio キー登録を確認します。記録用ディスプレイに対して ZMK のイベントを流す
