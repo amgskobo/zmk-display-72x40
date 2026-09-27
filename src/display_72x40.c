@@ -442,17 +442,18 @@ static void d72x40_wait_peer(void) {
                                 K_MSEC(CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS));
 }
 
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
-
-/* The peripheral whose battery the panel shows. */
+/* The peripheral whose battery and power the panel shows. */
 #define D72X40_PEER_SOURCE 0
 
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_PEER_POWER)
 
-/* What that peripheral last said about its own power; see power_state.h. */
+/* What that peripheral last said about its own power; see power_state.h.
+ * Kept without battery fetching too, since the event handler records it. */
 static atomic_t d72x40_peer_powered;
 
 #endif
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 
 /*
  * Whether that peripheral is connected. ZMK raises no event for it and keeps
