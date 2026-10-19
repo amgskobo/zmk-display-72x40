@@ -4,7 +4,7 @@
 DT_COMPAT_ZMK_DISPLAY_72X40 := zmk,display-72x40
 
 config ZMK_DISPLAY_72X40
-    bool "Low-cost status panel without LVGL"
+    bool "Fixed AKKB status panel without LVGL"
     default $(dt_compat_enabled,$(DT_COMPAT_ZMK_DISPLAY_72X40))
     # Both would own the same panel. ZMK's display runs LVGL and a 10 ms tick
     # while the keyboard is active; this module replaces it rather than
@@ -18,16 +18,16 @@ config ZMK_DISPLAY_72X40
     # posts the work that restarts advertising after a host disconnect.
     select ZMK_LOW_PRIORITY_WORK_QUEUE
     help
-      Draws a status panel on a monochrome, page-tiled display (SSD1306,
-      SSD1309, SH1106) through the Zephyr display API, with preconverted
+      Draws the fixed AKKB 72x40 panel in 40x72 portrait coordinates
+      through the Zephyr display API, with preconverted
       bitmap fonts instead of LVGL: the highest active layer, the host
       connection, the battery levels of both halves of a split, and Caps Lock
       and Studio's lock where those features are built in.
 
       The panel is redrawn only when an event changes something it shows, and
-      only the columns that changed are sent. Nothing redraws on a clock, so an
-      unchanged panel costs neither CPU time nor bus traffic; the one timer,
-      the panel's timeout, runs only while it is lit. With sync-input-device
+      only the columns that changed are sent. There is no periodic redraw.
+      Events that leave the pixels unchanged send no panel bytes; state
+      acquisition and rendering still use CPU. With sync-input-device
       set, writes on a bus shared with an input device are placed right after
       that device's reports.
 

@@ -54,12 +54,6 @@ for variant in "${variants[@]}"; do
         -o "$build_dir/test-$label"
     "$build_dir/test-$label"
     cc "${warnings[@]}" "${flags[@]}" -I"$repo_root/include" \
-        -c "$repo_root/tests/native_reference.c" -o "$build_dir/native-reference-$label.o"
-    cc "${warnings[@]}" "${flags[@]}" -DD72X40_NATIVE_STORAGE=1 -I"$repo_root/include" \
-        "$repo_root/tests/test_display_72x40_native.c" "$build_dir/native-reference-$label.o" \
-        -o "$build_dir/native-$label"
-    "$build_dir/native-$label"
-    cc "${warnings[@]}" "${flags[@]}" -I"$repo_root/include" \
         "$repo_root/tests/test_display_72x40_splash.c" \
         -o "$build_dir/splash-$label"
     "$build_dir/splash-$label"

@@ -7,7 +7,7 @@
   "contracts": [
     {
       "fixture": "tests/test_display_72x40_core.c",
-      "asserts": "Rendering primitives and exact frame contents; clipped ordinary/fallback/control glyphs; extreme coordinates, zero width for nonpositive cells and saturated unrepresentable text widths"
+      "asserts": "Fixed AKKB physical frame:24 independent pixel goldens +67 pre-refactor frame checksums; all byte glyph codes, clip/erase/lock and page edges, invalid/extreme coordinates, missing features, independent state, ordered differential spans and header-only redraw"
     },
     {
       "fixture": "tests/test_display_72x40_splash.c",
@@ -38,8 +38,8 @@
       "asserts": "Exact numeric tuple forwarding and unrelated-event isolation"
     },
     {
-      "fixture": "tests/test_native_storage_selector.py",
-      "asserts": "Actual production preprocessor selector under 20 independent status/chosen rotation metadata combinations"
+      "fixture": "tests/test_fixed_panel_contract.py",
+      "asserts": "Actual production static assertions with controlled DT metadata: fixed72x40 accepted, wrong width/height and removed rotation property rejected"
     },
     {
       "fixture": "tests/test_runtime_coverage.py",
@@ -52,6 +52,10 @@
     {
       "fixture": "tests/integration/module/src/runtime_test.c",
       "asserts": "Actual Zephyr kernel/workqueue behavior with a recording display including quiet decision races, positive timeout re-enable while old disable handler runs, and LED tuple republish during paused expiry when enabled; existing runtime/blank/external-port assertions retained; same ELF repeated three times per configuration"
+    },
+    {
+      "fixture": "tests/integration/check-fixed-panel.sh",
+      "asserts": "Real supported-core DT/kernel builds reject stale rotation and wrong physical dimensions with expected diagnostics; retain actual nonzero exits"
     }
   ],
   "limits": "Host function extraction and controlled registry/workqueue/tool stand-ins do not prove real scheduling, persistent storage, I2C deadlines or radio/physical behavior; native and unchanged stock/DYA compile variants remain separate.",
@@ -60,5 +64,6 @@
     "full": "ZMK_TEST_MODE=full: same host scenarios plus optimized and measured coverage variants; kernel/supported-core compilation uses separate integration entry",
     "integration": "owner native/DTS/API guards when interfaces or kernel contracts change; not a prerequisite for pure host behavior",
     "transport": "actual ordered USB/BLE/split/power/reset evidence; archived simulation is not a passing substitute"
-  }
+  },
+  "migration": "tests/fixed-layout-migration.md"
 }

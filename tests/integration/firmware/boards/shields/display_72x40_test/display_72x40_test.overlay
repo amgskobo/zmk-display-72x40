@@ -96,7 +96,6 @@
         sync-input-device = <&display_72x40_test_pad>;
         contrast = <128>;
         /* Built turned on its side, so the projection is compiled too. */
-        rotation = <90>;
         /* And with a reset line, so that pulse is compiled too. */
         reset-gpios = <&gpio1 0 GPIO_ACTIVE_LOW>;
     };

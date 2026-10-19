@@ -21,7 +21,6 @@
 #define HAS_contrast 1
 #define PROP_contrast 0x80
 #define INITIAL_CONTRAST 0x80
-#define D72X40_ROTATION 90
 #define HIDDEN_LAYERS BIT(2)
 #include "display_stubs.h"
 
@@ -765,11 +764,10 @@ static void test_splash(void) {
     assert((uint32_t)d72x40_led_settings == UINT32_MAX);
     settle();
     uint8_t limits[sizeof(d72x40_want)];
-    struct d72x40_canvas limits_cv = {.buf = limits, .width = D72X40_DRAW_WIDTH,
-                                      .pages = D72X40_DRAW_PAGES};
+    struct d72x40_canvas limits_cv = {.buf = limits};
     d72x40_render_led_splash(&limits_cv, UINT8_MAX, UINT8_MAX, UINT16_MAX);
     uint8_t limits_panel[sizeof(limits)];
-    d72x40_project(&limits_cv, limits_panel, D72X40_WIDTH, D72X40_PAGES, D72X40_ROTATION);
+    memcpy(limits_panel, limits_cv.buf, sizeof(limits_panel));
     assert(memcmp(d72x40_want, limits_panel, sizeof(limits_panel)) == 0);
     led(5);
     settle();

@@ -4,9 +4,9 @@
 
 [日本語](README_JA.md)
 
-A status panel for small monochrome OLEDs (SSD1306, SSD1309, SH1106) drawn
-without LVGL. It is meant for keyboards where the panel shares a bus with a
-touch controller, or where flash, RAM and battery are tight.
+The AKKB status panel for its fixed 72x40 OLED, drawn without LVGL as a
+40x72 portrait. Its controller page layout and mounting direction are fixed.
+There is no configurable orientation or general-purpose panel layout.
 
 - the highest active layer in large type, the host connection, the battery
   levels of both halves of a split, and Caps Lock and the service locks when those
@@ -21,16 +21,6 @@ touch controller, or where flash, RAM and battery are tight.
   (adjustable, or never) and before the keyboard powers off, `&soft_off`
   included.
 
-```
- 72x40 panel
- +------------------------+
- |       N U M            |   layer, double size
- |                        |
- | ᛒ1 ✓                   |   BLE profile 1, connected
- | L 85%            R 72% |   both halves' batteries
- | CAPS                   |   Caps Lock
- +------------------------+
-```
 
 ## Install
 
@@ -51,8 +41,8 @@ In the consuming config's `config/west.yml`:
 
 ### 2. Describe the panel
 
-Any Zephyr display that stores 8-pixel pages (`SCREEN_INFO_MONO_VTILED`)
-works. A 72x40 SSD1306 on I2C, for example:
+Use the AKKB 72x40 SSD1306 on I2C with 8-pixel pages
+(`SCREEN_INFO_MONO_VTILED`):
 
 ```dts
 &i2c1 {
@@ -73,7 +63,7 @@ works. A 72x40 SSD1306 on I2C, for example:
 };
 ```
 
-The height must be a multiple of 8.
+The physical size must be exactly 72x40. Drawing coordinates are fixed at 40x72.
 
 ### 3. Declare the status panel
 
@@ -88,7 +78,6 @@ On a unibody keyboard or a split central (the half with the keymap):
         hidden-layers = <6 7 8>;
         sync-input-device = <&trackpad>;
         contrast = <128>;
-        rotation = <90>;
     };
 };
 ```
@@ -99,12 +88,11 @@ the same panel, so the module is not built while it is on.
 
 | Property | Meaning |
 | --- | --- |
-| `display` | The panel. Its `width` and `height` size the canvas. |
+| `display` | The fixed 72x40 panel, drawn in 40x72 portrait coordinates. |
 | `hidden-layers` | Layer ids never named on the panel. A change to one of them does not wake the module. |
 | `sync-input-device` | An input device on the same bus; see [Sharing a bus](#sharing-a-bus). |
 | `contrast` | 0-255, set once at boot. |
 | `reset-gpios` | The panel's active-low reset line, pulsed before the display driver initialises; see [Resetting the panel](#resetting-the-panel). |
-| `rotation` | 0, 90, 180 or 270 degrees counter-clockwise, for a panel mounted on its side; see [A panel on its side](#a-panel-on-its-side). |
 
 ### Options
 
@@ -131,9 +119,7 @@ the same panel, so the module is not built while it is on.
 
 ## What the panel shows
 
-On a 40-column portrait canvas at least 72 pixels tall, the status uses fixed
-groups in this order: layer, BLE/USB HID routes, Caps, batteries, then
-service locks. On the 40x72 canvas their pixel rows are:
+The fixed 40x72 drawing uses these groups:
 
 | Rows | Content |
 | --- | --- |
@@ -150,20 +136,9 @@ and forwards open, close and expiry to the display's status invalidation API.
 It does not replace the advertising hook or add a polling timer. Service-state
 changes do not wake a timed-out panel; normal input still does.
 
-Compact landscape canvases retain the page layout below.
-
-| Page | Content |
-| --- | --- |
-| 0-1 | The highest active layer that is not hidden, centred: at double size when the whole name fits that way (six characters on 72 columns, three on 40), at ordinary size on one line when it does not, and over two lines - split at the last hyphen where there is one - when it is too long even for that. An unnamed layer shows `LAYER <index>`. The block is always two pages tall, so the lines below never move. |
-| 2 | `USB`, or a Bluetooth mark with the active profile number. Shows the actual selected HID transport, including fallback. A check requires that transport to be ready. Studio uses the inline icon and label where space permits. |
-| 3 | `L 85%` and `R 72%` on a split central with `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING`, otherwise `BAT 85%`. A bolt after the percentage means that half is on external power; for the peripheral that needs [the power reporter](#a-peripheral-on-external-power). `R --` means no peripheral is connected: ZMK reports 0 both for a peripheral that has dropped and for one whose battery really is flat, so the panel asks the split transport which peripherals it is carrying, and a connected one shows its level, `0%` included. Too narrow for both halves side by side, they take a line each. |
-| 4 | `CAPS` while the host's Caps Lock is on (`CONFIG_ZMK_HID_INDICATORS`). |
-
-A panel with fewer pages shows the lines that fit. Portrait text and the
-portrait LED settings view use Panel Status 10, a printable-ASCII bitmap subset
-derived from Mona10. It is stored as packed row data with spacing metadata; firmware does not
-parse font files or run a shaping engine. The original 5x7 font and six symbols
-remain for compact landscape layouts and dedicated status icons.
+Text and the LED settings view use Panel Status 10, a printable-ASCII bitmap
+subset derived from Mona10. The compact 5x7 data supplies dedicated status
+symbols. Firmware reads packed pixels without a font parser or shaping engine.
 The subset retains [OFL-1.1](licenses/mona-OFL.txt), separately from the module's
 MIT code. Its source revision and bitmap provenance are in
 [scripts/status10.txt](scripts/status10.txt).
@@ -181,16 +156,16 @@ per page (360 bytes for 72x40), next to a copy of what the panel shows.
 3. It compares the frame with the copy page by page and sends each changed
    run of columns as one write. Runs at most 12 columns apart are sent
    together, since addressing a second run costs about as much. Portrait digits
-   span more than one controller page; the exact sent bytes depend on rotation
-   and the changes in adjacent values.
+   span more than one controller page; the exact sent bytes depend on the
+   changed pixels and their neighboring values.
 4. While the panel is off, passes only draw; the frame goes out, before the
    panel switches back on, at the next key, encoder turn or pointer report.
 
 Nothing redraws between events, and the panel's timeout runs only while it is
 lit. Resource use depends on the selected features; use the current linked
-firmware's memory-region report rather than a historical module size. A 72x40
-display uses two 360-byte frame buffers at 0/90/270 degrees; 180 degrees adds a
-third 360-byte projection buffer. ZMK's own display adds
+firmware's memory-region report rather than a historical module size. The fixed panel
+uses two 360-byte frame buffers, 720 bytes total, with no intermediate frame.
+ZMK's own display adds
 LVGL, its fonts and object tree, and a 10ms tick while the keyboard is active.
 
 ## Resetting the panel
@@ -214,18 +189,14 @@ below `CONFIG_DISPLAY_INIT_PRIORITY`), holds it for
 that has finished starting up. Leave the panel's own node without a reset
 pin.
 
-## A panel on its side
+## Fixed mounting and migration
 
-These controllers store the picture in 8-pixel pages. A 72x40 panel at
-90 or 270 is laid out 40 wide and 72 tall, using the fixed portrait groups
-above. Drawing writes directly into controller pages; no full-frame rotation
-pass or intermediate frame is needed. A turned panel must be a multiple of
-8 columns wide.
-
-90 puts the drawing's top edge along the panel's left edge; if the panel then
-reads upside down, use 270. Zero degrees also draws directly. 180 retains a
-bounded projection with one intermediate frame. Physical CPU timing requires
-a board measurement.
+The drawing is permanently 40x72 and writes directly into the controller's
+72x40 page memory. The existing AKKB screen appearance is preserved. The
+rotation property, all orientation selectors, generic projection and landscape
+layouts have been removed. Delete any old rotation property from the status
+node; even an explicit zero is rejected at build time rather than ignored.
+Other physical panel sizes also fail at build time.
 
 ## A peripheral on external power
 
@@ -367,11 +338,10 @@ ZMK's public event and state functions.
 
 - `tests/run.sh` builds the drawing core and LED splash timing checks on the host with strict warnings,
   optimised and under ASan/UBSan, checks the layout, the font and the run
-  finder, and checks that the generated font header matches its source. Set
-  `D72X40_TEST_DUMP=1` to print the frames the tests draw.
+  finder, and checks that the generated font header matches its source.
   It then lifts the driver, power, settings, default-provider and peer-adapter functions into the stubbed
   harnesses in `tests/runtime/`, which model the panel's memory: the driver
-  built with every option on (a turned panel, reset pin, contrast, sync
+  built with every option on (fixed portrait, reset pin, contrast, sync
   device, split battery and power, LED splash) and with every option off,
   the peripheral power reporter, the settings bridge, and optional-source adapters. They cover boot
   clears with failing pages, diff writes, retries, the panel timeout, one bus
@@ -392,27 +362,15 @@ The portrait subset lives in `scripts/status10.txt`;
 `scripts/gen_status_font.py` regenerates `display_72x40_status_font.h`.
 Both generators use only Python's standard library and accept `--check`.
 
-Quarter-turn layouts draw directly into the panel's page buffer. The logical
-coordinates stay portrait-oriented, but text uses generated horizontal glyph
-rows and the other primitives write native page masks. No full-frame rotation
-or intermediate drawing buffer is needed at 90 or 270 degrees. On a 72x40
-panel this removes 360 bytes of persistent RAM; the wanted/shown buffers still
-use 720 bytes. One row bitmap format serves every orientation: 950 bytes
-of glyph rows and 95 bytes of spacing metadata. Text, control symbols and USB
-share the packed-row writers. Filled locks keep one row table and an efficient
-nine-pixel controller writer. Logical-page storage assembles columns from rows;
-quarter-turn storage writes row masks directly. There is no alternate font format, duplicate status column table or separate
-full-frame quarter-turn fast path. A private build-time storage hint is retained
-so the driver compiler can omit unused logical-storage paths; measured builds
-require this hint to keep code compact. Zero degrees draws directly; 180 degrees retains the generic
-projection path. Status, LED overlay and differential-write behavior are
-unchanged. Host CPU measurements do not establish device timing or power.
-
-Direct bitmap drawing clips the strip height and calculates its controller
-page, bit shift and upper-page availability once per glyph/icon. Consecutive
-rows then advance a byte address. This replaces the repeated row helper while
-preserving clipped edges, erase masks and both native orientations; no cache,
-extra persistent buffer or alternate font format is introduced.
+Drawing uses one fixed controller-page format. The canvas contains only a
+buffer pointer, with no dimensions, orientation state or storage hint. Text
+uses preconverted row data; clipping and controller offsets are calculated
+once per strip. The font has 950 bytes of pixels and 95 bytes of spacing data.
+Filled locks retain the dedicated nine-pixel writer. The two frame buffers
+remain 720 bytes; there is no projection buffer. See the
+[assertion migration map](tests/fixed-layout-migration.md) for retired generic
+cases and their fixed-display replacements. CPU timing and power on the real
+board require separate measurements.
 
 ## License
 

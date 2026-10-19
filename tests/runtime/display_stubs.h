@@ -46,9 +46,6 @@
 #define D72X40_WIDTH 72
 #define D72X40_HEIGHT 40
 #define D72X40_PAGES (D72X40_HEIGHT / D72X40_PAGE_HEIGHT)
-#define D72X40_DRAW_WIDTH D72X40_CANVAS_WIDTH(D72X40_WIDTH, D72X40_HEIGHT, D72X40_ROTATION)
-#define D72X40_DRAW_PAGES                                                                          \
-    (D72X40_CANVAS_HEIGHT(D72X40_WIDTH, D72X40_HEIGHT, D72X40_ROTATION) / D72X40_PAGE_HEIGHT)
 #define D72X40_RETRIES 3
 #define D72X40_PEER_SOURCE 0
 #define D72X40_BLANK_AFTER_MAX_MS 600000U
@@ -318,18 +315,7 @@ static STUB uint8_t d72x40_shown[D72X40_PAGES * D72X40_WIDTH];
 static STUB uint32_t d72x40_valid;
 static STUB bool d72x40_panel_on;
 static STUB uint8_t d72x40_failures;
-#if D72X40_ROTATION != 180
-#define D72X40_DRAW_BUF d72x40_want
-#else
-static STUB uint8_t d72x40_drawing[D72X40_DRAW_PAGES * D72X40_DRAW_WIDTH];
-#define D72X40_DRAW_BUF d72x40_drawing
-#endif
-static STUB const struct d72x40_canvas d72x40_canvas = {
-    .buf = D72X40_DRAW_BUF,
-    .width = D72X40_DRAW_WIDTH,
-    .pages = D72X40_DRAW_PAGES,
-    .rotation = D72X40_TURNED(D72X40_ROTATION) ? D72X40_ROTATION : 0,
-};
+static STUB const struct d72x40_canvas d72x40_canvas = {.buf = d72x40_want};
 enum {
     D72X40_READY,
     D72X40_REDRAW,

@@ -46,8 +46,6 @@ static const struct device *const sync_pad = DEVICE_DT_GET(DT_NODELABEL(sync_pad
 static uint8_t expected_buf[RECORDING_PAGES * RECORDING_WIDTH];
 static const struct d72x40_canvas expected = {
     .buf = expected_buf,
-    .width = RECORDING_WIDTH,
-    .pages = RECORDING_PAGES,
 };
 
 static struct recording_display snapshot(void) {
@@ -62,6 +60,12 @@ static struct recording_display snapshot(void) {
  * the layer is all that varies: the host line is a lone cross and the lines
  * below it stay empty.
  */
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST_EXTERNAL_PORTS)
+static atomic_t external_reads;
+static atomic_t external_open;
+static atomic_t external_observed_open;
+#endif
+
 static bool frame_is(const char *layer) {
     struct d72x40_status st = {
         .transport = D72X40_TRANSPORT_NONE,
@@ -70,6 +74,11 @@ static bool frame_is(const char *layer) {
         .peer_battery = D72X40_BATTERY_HIDDEN,
     };
 
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST_EXTERNAL_PORTS)
+    /* Checking a frame reads fixture input without calling the provider. */
+    st.messenger_lock_available = true;
+    st.messenger_unlocked = atomic_get(&external_open) != 0;
+#endif
     d72x40_append(st.layer, sizeof(st.layer), layer);
     d72x40_render(&expected, &st);
 
@@ -261,11 +270,15 @@ static void test_layer_change_sends_only_the_layer(void) {
 
     __ASSERT(frame_is("NUM"), "NUM shown");
     __ASSERT(rec.writes > 0, "something sent");
-    __ASSERT(rec.page_writes[2] == 0 && rec.page_writes[3] == 0 && rec.page_writes[4] == 0,
-             "only the layer pages are sent");
-    __ASSERT(rec.bytes <= 2 * RECORDING_WIDTH, "%u bytes for a layer change", rec.bytes);
+    for (uint32_t i = 0; i < rec.log_len; i++) {
+        const struct recording_entry *e = &rec.log[i];
+        if (e->kind == RECORDING_WRITE) {
+            __ASSERT(e->x0 + e->len <= 13, "only the fixed header columns are sent");
+        }
+    }
+    __ASSERT(rec.bytes <= 5 * 13, "%u bytes for a layer change", rec.bytes);
 
-    printk("PASS: a layer change sends only changed columns of the layer pages (%u bytes)\n",
+    printk("PASS: a layer change sends only changed columns of the fixed header (%u bytes)\n",
            rec.bytes);
 }
 
@@ -591,9 +604,6 @@ static void test_settings_apply_at_run_time(void) {
 }
 
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST_EXTERNAL_PORTS)
-static atomic_t external_reads;
-static atomic_t external_open;
-static atomic_t external_observed_open;
 
 struct zmk_display_72x40_lock_status zmk_display_72x40_get_external_lock_status(void) {
     atomic_inc(&external_reads);
@@ -627,7 +637,7 @@ static void test_external_ports(void) {
              "status invalidation reads current state even while dark");
     zmk_display_72x40_set_blank_after_ms(0);
     k_msleep(SETTLE_MS);
-    __ASSERT(snapshot().on, "wake uses the already updated frame");
+    __ASSERT(snapshot().on && frame_is("NUM"), "wake shows the updated external lock frame");
 
     zmk_display_72x40_show_led_settings(5, 60, 350);
     k_msleep(SETTLE_MS);

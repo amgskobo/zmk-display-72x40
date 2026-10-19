@@ -73,10 +73,6 @@
 #endif
 
 #include <zmk-display-72x40/display_72x40.h>
-#if DT_INST_PROP_OR(0, rotation, 0) == 90 || \
-    DT_INST_PROP_OR(0, rotation, 0) == 270
-#define D72X40_NATIVE_STORAGE 1
-#endif
 #include <zmk-display-72x40/display_72x40_core.h>
 
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
@@ -97,22 +93,10 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 1,
 #define D72X40_HEIGHT DT_PROP(D72X40_PANEL_NODE, height)
 #define D72X40_PAGES (D72X40_HEIGHT / D72X40_PAGE_HEIGHT)
 
-/* Turning the drawing swaps the canvas's sides; the panel keeps its own. */
-#define D72X40_ROTATION DT_PROP_OR(D72X40_NODE, rotation, 0)
-#define D72X40_DRAW_WIDTH D72X40_CANVAS_WIDTH(D72X40_WIDTH, D72X40_HEIGHT, D72X40_ROTATION)
-#define D72X40_DRAW_PAGES (D72X40_CANVAS_HEIGHT(D72X40_WIDTH, D72X40_HEIGHT, D72X40_ROTATION) / D72X40_PAGE_HEIGHT)
-
-BUILD_ASSERT(D72X40_HEIGHT % D72X40_PAGE_HEIGHT == 0,
-             "zmk,display-72x40: the panel height must be a multiple of 8");
-BUILD_ASSERT(D72X40_PAGES >= 1 && D72X40_PAGES <= 32,
-             "zmk,display-72x40: the panel must be 8 to 256 rows tall");
-BUILD_ASSERT(D72X40_WIDTH >= D72X40_CELL && D72X40_WIDTH <= 1024,
-             "zmk,display-72x40: unsupported panel width");
-
-BUILD_ASSERT(D72X40_ROTATION == 0 || D72X40_ROTATION == 90 || D72X40_ROTATION == 180 || D72X40_ROTATION == 270,
-             "zmk,display-72x40: rotation must be 0, 90, 180 or 270");
-BUILD_ASSERT(!D72X40_TURNED(D72X40_ROTATION) || D72X40_WIDTH % D72X40_PAGE_HEIGHT == 0,
-             "zmk,display-72x40: a turned panel must be a multiple of 8 columns wide");
+BUILD_ASSERT(D72X40_WIDTH == D72X40_PANEL_WIDTH && D72X40_HEIGHT == D72X40_PANEL_HEIGHT,
+             "zmk,display-72x40 requires the fixed AKKB 72x40 panel");
+BUILD_ASSERT(!DT_NODE_HAS_PROP(D72X40_NODE, rotation),
+             "rotation was removed: AKKB uses a fixed portrait layout");
 
 BUILD_ASSERT(CONFIG_ZMK_DISPLAY_72X40_INIT_PRIORITY > CONFIG_DISPLAY_INIT_PRIORITY,
              "the panel clear must run after the display driver has initialised");
@@ -189,25 +173,7 @@ static uint32_t d72x40_valid;
 static bool d72x40_panel_on;
 static uint8_t d72x40_failures;
 
-#if D72X40_ROTATION != 180
-
-/* Zero and quarter turns draw straight into the panel's page layout. */
-#define D72X40_DRAW_BUF d72x40_want
-
-#else
-
-static uint8_t d72x40_drawing[D72X40_DRAW_PAGES * D72X40_DRAW_WIDTH];
-
-#define D72X40_DRAW_BUF d72x40_drawing
-
-#endif
-
-static const struct d72x40_canvas d72x40_canvas = {
-    .buf = D72X40_DRAW_BUF,
-    .width = D72X40_DRAW_WIDTH,
-    .pages = D72X40_DRAW_PAGES,
-    .rotation = D72X40_TURNED(D72X40_ROTATION) ? D72X40_ROTATION : 0,
-};
+static const struct d72x40_canvas d72x40_canvas = {.buf = d72x40_want};
 
 enum {
     /* The boot-time clear has run; the work handler may use the panel. */
@@ -836,9 +802,6 @@ static void d72x40_work_handler(struct k_work *work) {
         d72x40_collect(&st);
         d72x40_render(&d72x40_canvas, &st);
         }
-#if D72X40_ROTATION == 180
-        d72x40_project(&d72x40_canvas, d72x40_want, D72X40_WIDTH, D72X40_PAGES, D72X40_ROTATION);
-#endif
     }
 
     /* A dark panel is not written: the frame goes out when it wakes. */

@@ -29,13 +29,13 @@ Unknown mode values fail; there is no silent skipped success.
 | [runtime/status_harness.c](runtime/status_harness.c) | Default external lock provider is unavailable |
 | [runtime/messenger_harness.c](runtime/messenger_harness.c) | Optional adapter reads the public getter and forwards invalidation without bus/activity effects |
 | [runtime/led_patterns_harness.c](runtime/led_patterns_harness.c) | Optional adapter forwards the exact numeric tuple and ignores unrelated events |
-| [test_native_storage_selector.py](test_native_storage_selector.py) | Actual production preprocessor selector under 20 independent status/chosen rotation combinations |
+| [test_fixed_panel_contract.py](test_fixed_panel_contract.py) | Compiles the actual production admission assertions: fixed 72x40 accepted, wrong dimensions and a stale orientation property rejected |
 | [test_runtime_coverage.py](test_runtime_coverage.py) | Public full-mode runner rejects empty/unrelated gcov; each gated range needs executable lines; measured misses remain failures |
 | [test_integration_evidence.py](test_integration_evidence.py) | Actual shell entry freshness, output mapping, failure-code propagation and retained source/graph/logs under controlled tool failures |
 
 The root `test_*.py` units run in both quick and full through `tests/run.sh`.
-The selector uses the actual production conditional with controlled devicetree
-metadata. The coverage controls use a recording compiler and synthetic gcov,
+The fixed-panel admission fixture compiles the actual production assertions
+with controlled devicetree metadata. The coverage controls use a recording compiler and synthetic gcov,
 and the integration lifecycle controls use recording Docker/west commands.
 They establish validator and process contracts; they execute no firmware.
 
@@ -80,53 +80,30 @@ connection/Caps/battery groups and filled locks with diagonal opening shackles.
 reference for all lock combinations, three routes, and battery/charging/Caps
 states. The old row assertions changed intentionally for this visual design;
 no timing trace or transport expectation was accepted to hide a failure.
-Generic projection is checked at every pixel of 100 deterministic random
-frames in both quarter turns and on unaligned shapes. The unused full-frame
-tile transpose and its 64 single-bit private-algorithm assertions are removed;
-independent bitmap pixels and projection frames retain the rendering contract. Font clipping, invalid character fallback, whole-glyph
-truncation, page crossings, erase mode and omitted features stay covered.
-Direct quarter-turn storage also checks both directions against independent
-pixel coordinates for all 24 approved frames, all printable glyphs and fallback,
-clipped/erased masks, packed bitmaps crossing controller and logical pages,
-invalid inputs, short headers, both locks and 19 LED patterns on three shapes.
-The runtime LED limit assertion compares physical frames through the reference
-projection instead of assuming that the drawing buffer has logical storage.
-The core also compares all six control-code symbols at clipped x/row edges in
-both quarter turns. The generated font no longer has alternate row/column
-formats. A private `D72X40_NATIVE_STORAGE` hint remains for the driver compiler;
-measurements showed that removing it retains unused paths. Its dedicated
-`test_display_72x40_native.c` fixture and generic `native_reference.c` are
-therefore retained under optimized and sanitizer builds. They still compare
-all 24 states, high Profile/charging variants and 19 LED IDs through an
-independent pixel-coordinate projection. The driver enables this hint only
-for actual 90/270-degree storage; the generic owner supports all orientations.
+## Fixed AKKB layout and assertion migration
 
-| Removed or simplified assertion | Retained contract/check |
-| --- | --- |
-| Duplicate row/column font formats | One row format: 950-byte pixels plus 95-byte spacing metadata, total static assertion |
-| Private general 16-bit row writer | Fixed nine-pixel lock masks retain independent bounds, zero-row and invalid inputs; bitmap writers retain erase/clipping and buffer bounds |
-| 64 single-bit full-frame transpose cases | Algorithm removed; generic projection retains 100 independent dense frames at both turns; bitmap pixels are independently specified |
-| Flat storage rejection in former font mode | Font mode removed; generic flat storage is checked by goldens and bitmap coordinates, while the driver's direct-storage hint requires turned storage |
-| High Profile 255 and peer charging | Retained in the dedicated storage fixture and migrated to generic approved-state checks |
+The owner supports one 72x40 controller frame and a fixed 40x72 drawing layout.
+The core fixture retains the 24 independently approved frames pixel by pixel.
+It additionally compares 67 physical-frame checksums captured before the
+refactor: each approved state with ordinary/high Profile and peer charging,
+plus all 19 LED IDs at full-width numeric limits. The approved pixel data is
+unchanged. A deliberate pixel flip must change the full-frame checksum.
 
-`test_bitmap_edges` checks flat, 90 and 270 storage with eight-pixel row strips,
-negative/edge coordinates and eleven-row bitmaps. Nine-pixel locks retain their
-golden-frame and clipped-edge assertions. Original sources are preserved in
-the integration task's before-change archive. Warning, sanitizer, optimized
-and documented 100% coverage gates retain the selected driver/power/settings/API
-and failure/recovery scenarios.
+Independent pixel assertions exercise all 256 byte codes, clipped bitmap strips,
+zero/partial/multiple-page heights, draw/erase masks, every relevant lock edge,
+invalid/extreme coordinates, empty text, whole-glyph truncation, independent
+state and missing features. Ordered span joins, full unknown-page refresh,
+unchanged zero-write and header-only differential writes remain covered.
+The real-kernel layer-change case now requires every write to stay within
+controller columns 0..12, across at most five pages; it no longer assumes the
+removed landscape layout's first two controller pages.
 
-The per-row `d72x40_native_row8` helper is now folded into the bitmap writer.
-Its existing physical x=-1..72/y=-9..40 draw/erase assertions retain every
-independently specified output byte. The fixture maps those physical inputs
-to one-row logical bitmap coordinates and calls the retained entry point.
-The full bitmap clipping, multi-page, partial bottom edge and both-direction
-golden checks remain; no expected frame or failure assertion is weakened.
-
-The previous portrait row assertions were updated for the intentional layout;
-landscape, clipping, font, rotation, diff-write, power and settings assertions
-remain in the suite. The optional observer is compiled with both modules in
-the external keyboard and a focused upstream combined fixture.
+The removed generic font/layout/projection and orientation specialization tests
+are archived and mapped in [fixed-layout-migration.md](fixed-layout-migration.md).
+There is no alternate storage format, compiler hint, orientation parameter or
+reference renderer. One core binary per compiler variant exercises the fixed
+implementation. The fixed panel admission fixture compiles actual production
+assertions; it is a metadata/compile check, not physical acceptance.
 
 Each fixture keeps its existing normal, boundary/invalid, independent-state,
 reset/cancellation and failure/recovery scenarios where applicable. Checks
@@ -191,8 +168,8 @@ no connection mark. A bonded disconnected profile retains a cross; a connected
 profile retains a check when selected for HID. The portrait BLE and USB checks
 identify the selected HID route exclusively. A connected inactive link has no
 mark; this also uses the internal OPEN value without changing BLE pairing state.
-The core tests compare every pixel in the empty mark region after a connected
-frame, and the landscape test compares the complete output page. The former
+The independent approved frames pin the full fixed layout, and the runtime
+fixture retains the complete selected-route/readiness matrix. The former
 circle expectations changed intentionally for this owner-requested presentation.
 
 ## Current test ownership and compatibility
@@ -295,3 +272,13 @@ python3 -m unittest discover -v -s tests/integration -p test_registration.py
 The firmware entry records `zephyr/pm-symbols.txt` from the configured compiler's
 `nm --defined-only` command, then invokes
 `python3 tests/integration/registration.py BUILD/zephyr/pm-symbols.txt`.
+
+## Rejected fixed-panel configurations
+
+For DTS/interface changes, run `bash tests/integration/check-fixed-panel.sh upstream|dya`
+with the same `ZMK_TEST_OFFLINE_WORKSPACE` and a new `ZMK_TEST_OUTPUT`.
+This owner entry builds the actual native DT/kernel path twice and requires
+rejection of an old orientation property and a wrong physical width.
+Each negative build must emit its exact panel-contract diagnostic; unrelated
+compiler failures do not count as a passing rejection. These are additional
+configuration guards, separate from the five valid integration configurations.

@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * display_72x40.c with every option off: an unturned panel with no reset pin,
+ * display_72x40.c with every option off: the fixed panel with no reset pin,
  * contrast or sync device, and no BLE, USB, battery, split, HID indicators,
  * Studio locking or LED splash. What differs from the full build is the #else
  * side of each option.
@@ -10,7 +10,6 @@
 #define HAS_sync_input_device 0
 #define HAS_contrast 0
 #define INITIAL_CONTRAST -1
-#define D72X40_ROTATION 0
 #define HIDDEN_LAYERS 0
 #include "display_stubs.h"
 
@@ -33,7 +32,7 @@ int main(void) {
     assert(!st.messenger_lock_available && !st.messenger_unlocked);
     assert(strcmp(st.layer, "BASE") == 0 && st.transport == D72X40_TRANSPORT_NONE);
 
-    /* The unturned frame is drawn straight into what the panel is sent. */
+    /* The fixed frame is drawn straight into what the panel is sent. */
     assert(d72x40_panel_init() == 0 && contrast_set == -1);
     for (int i = 0; i < 10 && d72x40_work.scheduled; i++) {
         run(&d72x40_work);
