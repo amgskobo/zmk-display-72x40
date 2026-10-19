@@ -93,6 +93,11 @@ static void test_text_and_font(void) {
     for(unsigned code=0;code<=255;code++) {
         const uint8_t *glyph=d72x40_glyph((unsigned char)code);
         for(int col=0;col<5;col++) CHECK((glyph[col]&0x80)==0);
+        if (code >= D72X40_FONT_ASCII_FIRST && code <= D72X40_FONT_ASCII_LAST) {
+            unsigned any = 0;
+            for (int col = 0; col < D72X40_FONT_WIDTH; col++) any |= glyph[col];
+            CHECK(code == ' ' ? any == 0 : any != 0);
+        }
         if(code==0) continue;
         for(size_t a=0;a<10;a++) for(size_t b=0;b<10;b++) {
             frame_init(&f); memset(expected,0,360); char text[2]={(char)code,0};
@@ -103,6 +108,10 @@ static void test_text_and_font(void) {
         }
     }
     CHECK(d72x40_glyph(0xff)==d72x40_glyph('?'));
+    CHECK(d72x40_glyph(0x80)==d72x40_glyph('?'));
+    CHECK(d72x40_glyph(0x01)!=d72x40_glyph('?'));
+    CHECK(d72x40_glyph(D72X40_FONT_ASCII_LAST) ==
+          d72x40_font_ascii[D72X40_FONT_ASCII_LAST-D72X40_FONT_ASCII_FIRST]);
     CHECK(d72x40_glyph(0x1f)==d72x40_glyph('?'));
     frame_init(&f); d72x40_text_row(&f.cv,0,0,"",1); d72x40_text_row(&f.cv,0,0,"A",0); CHECK(hash_frame(f.buf)==hash_frame((uint8_t[360]){0}));
     d72x40_text_row(&f.cv,39,0,"AA",2); guarded(&f);
@@ -139,6 +148,43 @@ static void test_status_font_and_locks(void) {
     d72x40_status_text(&f.cv,40,0,"A",1,false); d72x40_status_text(&f.cv,0,0,"A",0,false);
     d72x40_status_text(&f.cv,0,0,"",1,false); d72x40_status_centred(&f.cv,0,"AAAAAAAAAAAAAAAAAAAAAA",false); guarded(&f);
 }
+
+/* Independent glyph pixels at the approved normal-value group anchors. */
+static void check_status_line(const struct d72x40_canvas *cv, int row, int x0,
+                              const char *text) {
+    for (int y = 0; y < 10; y++) {
+        for (int x = 0; x < 40; x++) {
+            bool expected = false;
+            int at = x0;
+            for (size_t i = 0; text[i] != 0; i++) {
+                unsigned index = (unsigned char)text[i] - 32u;
+                if (x >= at && x < at + 8) {
+                    expected |= (((unsigned)d72x40_status_rows[index][y] >>
+                                  (7 - (x - at))) & 1u) != 0;
+                }
+                at += d72x40_status_advance[index];
+            }
+            CHECK(pixel(cv, x, row + y) == expected);
+        }
+    }
+}
+static void test_normal_led_content(void) {
+    struct frame f;
+    frame_init(&f);
+    memset(f.buf, 0xff, sizeof(f.buf));
+    d72x40_render_led_splash(&f.cv, 5, 60, 150);
+    CHECK(pixel(&f.cv, 0, 0) && pixel(&f.cv, 39, 12));
+    check_status_line(&f.cv, 16, 14, "P5");
+    check_status_line(&f.cv, 27, 4, "TRIPLE");
+    check_status_line(&f.cv, 40, 8, "B60%");
+    check_status_line(&f.cv, 56, 7, "S150%");
+    const int blank_rows[] = {13, 15, 37, 50, 66};
+    for (size_t i = 0; i < sizeof(blank_rows)/sizeof(blank_rows[0]); i++) {
+        for (int x = 0; x < 40; x++) CHECK(!pixel(&f.cv, x, blank_rows[i]));
+    }
+    guarded(&f);
+}
+
 static void test_state_and_bounds(void) {
     struct frame a,b; frame_init(&a); frame_init(&b);
     struct d72x40_status st={.battery=D72X40_BATTERY_HIDDEN,.peer_battery=D72X40_BATTERY_HIDDEN};
@@ -191,6 +237,13 @@ static void test_spans(void) {
 
     collect(want, shown, 72, 5, 0x1f, &list);
     CHECK(list.count == 0);
+
+    /* A run beginning at column zero includes its adjacent change. */
+    want[0] = 1;
+    want[1] = 1;
+    collect(want, shown, 72, 5, 0x1f, &list);
+    CHECK(list.count == 1 && span_is(&list.spans[0], 0, 0, 1));
+    memset(want, 0, sizeof(want));
 
     /* Unknown pages go whole, in order. */
     collect(want, shown, 72, 5, 0x00, &list);
@@ -264,7 +317,7 @@ static void test_redraw_costs(void) {
 }
 int main(void) {
     test_approved_frames();test_bitmap_edges();test_text_and_font();test_status_font_and_locks();
-    test_state_and_bounds();test_spans();test_redraw_costs();
+    test_normal_led_content();test_state_and_bounds();test_spans();test_redraw_costs();
     if(failures){fprintf(stderr,"%d checks failed\n",failures);return EXIT_FAILURE;}
     puts("display_72x40_core: all fixed AKKB checks passed");return EXIT_SUCCESS;
 }
