@@ -73,14 +73,17 @@
 #endif
 
 #include <zmk-display-72x40/display_72x40.h>
+#if DT_INST_PROP_OR(0, rotation, 0) == 90 || \
+    DT_INST_PROP_OR(0, rotation, 0) == 270
+#define D72X40_NATIVE_STORAGE 1
+#endif
 #include <zmk-display-72x40/display_72x40_core.h>
 
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
 #include <zmk-display-72x40/display_72x40_splash.h>
-#include <zmk-led-patterns/events/state_changed.h>
 #endif
 
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_REGISTER(zmk_display_72x40_display_72x40, CONFIG_ZMK_DISPLAY_72X40_LOG_LEVEL);
 
 BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 1,
              "declare exactly one zmk,display-72x40 node");
@@ -186,9 +189,9 @@ static uint32_t d72x40_valid;
 static bool d72x40_panel_on;
 static uint8_t d72x40_failures;
 
-#if D72X40_ROTATION == 0
+#if D72X40_ROTATION != 180
 
-/* Nothing to turn: the drawing is the frame. */
+/* Zero and quarter turns draw straight into the panel's page layout. */
 #define D72X40_DRAW_BUF d72x40_want
 
 #else
@@ -203,6 +206,7 @@ static const struct d72x40_canvas d72x40_canvas = {
     .buf = D72X40_DRAW_BUF,
     .width = D72X40_DRAW_WIDTH,
     .pages = D72X40_DRAW_PAGES,
+    .rotation = D72X40_TURNED(D72X40_ROTATION) ? D72X40_ROTATION : 0,
 };
 
 enum {
@@ -235,26 +239,40 @@ static void d72x40_schedule_now(void);
 static K_WORK_DELAYABLE_DEFINE(d72x40_work, d72x40_work_handler);
 
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
-static atomic_t d72x40_led_pattern;
-static atomic_t d72x40_led_brightness;
-static atomic_t d72x40_led_speed;
+/* One word keeps a supplied pattern/brightness/speed tuple together. */
+static struct k_spinlock d72x40_splash_lock;
+static atomic_t d72x40_led_settings;
 static atomic_t d72x40_led_changed_at_ms;
 static atomic_t d72x40_led_splash_seen;
 static atomic_t d72x40_led_splash_ms = ATOMIC_INIT(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH_MS);
 
 static void d72x40_led_splash_handler(struct k_work *work);
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST)
+void zmk_display_72x40_test_splash_candidate(void);
+#endif
 static K_WORK_DELAYABLE_DEFINE(d72x40_led_splash_work, d72x40_led_splash_handler);
 
 static void d72x40_led_splash_handler(struct k_work *work) {
     ARG_UNUSED(work);
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST)
+    zmk_display_72x40_test_splash_candidate();
+#endif
+    const k_spinlock_key_t key = k_spin_lock(&d72x40_splash_lock);
     const uint32_t duration = (uint32_t)atomic_get(&d72x40_led_splash_ms);
+    if (duration == 0 || atomic_get(&d72x40_led_splash_seen) == 0) {
+        k_spin_unlock(&d72x40_splash_lock, key);
+        return;
+    }
     const uint32_t remaining = d72x40_splash_remaining_ms(
         k_uptime_get_32(), (uint32_t)atomic_get(&d72x40_led_changed_at_ms), duration);
     if (remaining != 0U) {
         k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
                                     K_MSEC(remaining));
+        k_spin_unlock(&d72x40_splash_lock, key);
         return;
     }
+    atomic_set(&d72x40_led_splash_seen, 0);
+    k_spin_unlock(&d72x40_splash_lock, key);
     atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
     d72x40_schedule_now();
 }
@@ -268,24 +286,40 @@ static void d72x40_schedule_now(void) {
     k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_work, K_NO_WAIT);
 }
 
+void zmk_display_72x40_status_changed(void) {
+    atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+    d72x40_schedule(K_MSEC(CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS));
+}
+
 /*
  * The panel's timeout, contrast and optional LED splash duration can change
  * while the keyboard runs. Each starts at its build-time default and is changed
  * through the setters in display_72x40.h - display_72x40_custom_settings.c calls
  * them for a Studio client - and read where it matters rather than latched.
  */
+/* Keep each timeout policy and its timer admission in the same order. */
+static struct k_spinlock d72x40_quiet_policy_lock;
 static atomic_t d72x40_blank_after_ms = ATOMIC_INIT(CONFIG_ZMK_DISPLAY_72X40_BLANK_AFTER_MS);
 
 void zmk_display_72x40_set_led_splash_ms(uint32_t ms) {
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
     ms = MIN(ms, 10000U);
+    const k_spinlock_key_t key = k_spin_lock(&d72x40_splash_lock);
     if ((uint32_t)atomic_set(&d72x40_led_splash_ms, (atomic_val_t)ms) == ms) {
+        k_spin_unlock(&d72x40_splash_lock, key);
         return;
     }
     if (ms == 0) {
-        (void)k_work_cancel_delayable(&d72x40_led_splash_work);
+        k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
+                                    K_FOREVER);
         atomic_set(&d72x40_led_splash_seen, 0);
+    } else if (atomic_get(&d72x40_led_splash_seen) != 0) {
+        const uint32_t remaining = d72x40_splash_remaining_ms(
+            k_uptime_get_32(), (uint32_t)atomic_get(&d72x40_led_changed_at_ms), ms);
+        k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
+                                    K_MSEC(remaining));
     }
+    k_spin_unlock(&d72x40_splash_lock, key);
     atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
     d72x40_schedule_now();
 #else
@@ -312,6 +346,11 @@ static int d72x40_contrast_sent = -1;
 static atomic_t d72x40_active_at_ms;
 
 static void d72x40_quiet_handler(struct k_work *work);
+
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST)
+/* The owner native fixture can pause the quiet decision; no test policy lives here. */
+void zmk_display_72x40_test_quiet_candidate(struct k_work_delayable *quiet);
+#endif
 
 static K_WORK_DELAYABLE_DEFINE(d72x40_quiet_work, d72x40_quiet_handler);
 
@@ -341,7 +380,29 @@ static void d72x40_quiet_handler(struct k_work *work) {
                                   K_MSEC(after_ms - quiet_ms));
         return;
     }
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST)
+    zmk_display_72x40_test_quiet_candidate(&d72x40_quiet_work);
+#endif
+    /* Publish before the final sample: activity/disable either appears in that
+     * sample or sees the candidate and clears it. This queue cannot draw the
+     * candidate until this handler has returned. */
     atomic_set_bit(&d72x40_flags, D72X40_QUIET);
+    const uint32_t current_after = (uint32_t)atomic_get(&d72x40_blank_after_ms);
+    const uint32_t current_quiet =
+        k_uptime_get_32() - (uint32_t)atomic_get(&d72x40_active_at_ms);
+    if (current_after == 0 || current_quiet < current_after) {
+#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_TEST)
+        if (current_after == 0) {
+            zmk_display_72x40_test_quiet_candidate(&d72x40_quiet_work);
+        }
+#endif
+        atomic_clear_bit(&d72x40_flags, D72X40_QUIET);
+        if (current_after != 0) {
+            k_work_schedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_quiet_work,
+                                      K_MSEC(current_after - current_quiet));
+        }
+        return;
+    }
     d72x40_schedule_now();
 }
 
@@ -374,19 +435,26 @@ INPUT_CALLBACK_DEFINE(NULL, d72x40_activity_input_cb, NULL);
  */
 void zmk_display_72x40_set_blank_after_ms(uint32_t ms) {
     ms = MIN(ms, D72X40_BLANK_AFTER_MAX_MS);
+    const k_spinlock_key_t key = k_spin_lock(&d72x40_quiet_policy_lock);
     if ((uint32_t)atomic_set(&d72x40_blank_after_ms, (atomic_val_t)ms) == ms) {
+        k_spin_unlock(&d72x40_quiet_policy_lock, key);
         return;
     }
     if (ms == 0) {
-        (void)k_work_cancel_delayable(&d72x40_quiet_work);
+        /* Retire its timeout without rejecting an immediate later re-enable. */
+        k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_quiet_work,
+                                    K_FOREVER);
         /* A panel the old timeout darkened is lit again. */
-        if (atomic_test_and_clear_bit(&d72x40_flags, D72X40_QUIET)) {
+        const bool wake = atomic_test_and_clear_bit(&d72x40_flags, D72X40_QUIET);
+        k_spin_unlock(&d72x40_quiet_policy_lock, key);
+        if (wake) {
             d72x40_schedule_now();
         }
         return;
     }
     /* Measured again from the last key, against the new length. */
     k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_quiet_work, K_NO_WAIT);
+    k_spin_unlock(&d72x40_quiet_policy_lock, key);
 }
 
 void zmk_display_72x40_set_contrast(uint8_t contrast) {
@@ -522,38 +590,74 @@ static void d72x40_collect_layer(struct d72x40_status *st) {
     }
 }
 
-/* As ZMK's output widget: with no host selected, the preferred transport. */
+/* Checks identify the selected HID route, not every connected transport. */
 static void d72x40_collect_output(struct d72x40_status *st) {
     struct zmk_endpoint_instance selected = zmk_endpoint_get_selected();
     enum zmk_transport transport = selected.transport;
-    bool connected = transport != ZMK_TRANSPORT_NONE;
-
-    if (!connected) {
-        transport = zmk_endpoint_get_preferred_transport();
-    }
 
     st->transport = D72X40_TRANSPORT_NONE;
     st->link = D72X40_LINK_DOWN;
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+    st->ble_available = true;
+    st->profile = (uint8_t)(zmk_ble_active_profile_index() + 1);
+    st->ble_link = zmk_ble_active_profile_is_connected()
+                      ? (transport == ZMK_TRANSPORT_BLE ? D72X40_LINK_UP : D72X40_LINK_OPEN)
+                      : zmk_ble_active_profile_is_open() ? D72X40_LINK_OPEN : D72X40_LINK_DOWN;
+#endif
+#if IS_ENABLED(CONFIG_ZMK_USB)
+    st->usb_available = true;
+    st->usb_link = zmk_usb_get_conn_state() == ZMK_USB_CONN_HID
+                      ? (transport == ZMK_TRANSPORT_USB ? D72X40_LINK_UP : D72X40_LINK_OPEN)
+                      : D72X40_LINK_DOWN;
+#endif
     switch (transport) {
     case ZMK_TRANSPORT_USB:
         st->transport = D72X40_TRANSPORT_USB;
-        st->link = connected ? D72X40_LINK_UP : D72X40_LINK_DOWN;
+        st->link = st->usb_link;
         break;
 #if IS_ENABLED(CONFIG_ZMK_BLE)
     case ZMK_TRANSPORT_BLE:
         st->transport = D72X40_TRANSPORT_BLE;
-        st->profile = (uint8_t)(zmk_ble_active_profile_index() + 1);
-        if (zmk_ble_active_profile_is_connected()) {
-            st->link = D72X40_LINK_UP;
-        } else if (zmk_ble_active_profile_is_open()) {
-            st->link = D72X40_LINK_OPEN;
-        }
+        st->link = st->ble_link;
         break;
 #endif
     default:
         break;
     }
 }
+
+#if IS_ENABLED(CONFIG_ZMK_USB) && IS_ENABLED(CONFIG_ZMK_BLE)
+/* ZMK emits endpoint_changed only when the actual endpoint changes. A
+ * preference change during USB fallback emits nothing, so observe the public
+ * setter without changing ZMK or polling the display. */
+int __real_zmk_endpoint_set_preferred_transport(enum zmk_transport transport);
+int __wrap_zmk_endpoint_set_preferred_transport(enum zmk_transport transport);
+
+int __wrap_zmk_endpoint_set_preferred_transport(enum zmk_transport transport) {
+    enum zmk_transport before = zmk_endpoint_get_preferred_transport();
+    int result = __real_zmk_endpoint_set_preferred_transport(transport);
+    if (before != zmk_endpoint_get_preferred_transport()) {
+        atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+        d72x40_schedule(K_MSEC(CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS));
+    }
+    return result;
+}
+
+/* The toggle calls the setter from endpoints.c itself; those local calls need
+ * not pass through the linker's setter wrapper. Observe this public entry too. */
+int __real_zmk_endpoint_toggle_preferred_transport(void);
+int __wrap_zmk_endpoint_toggle_preferred_transport(void);
+
+int __wrap_zmk_endpoint_toggle_preferred_transport(void) {
+    enum zmk_transport before = zmk_endpoint_get_preferred_transport();
+    int result = __real_zmk_endpoint_toggle_preferred_transport();
+    if (before != zmk_endpoint_get_preferred_transport()) {
+        atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+        d72x40_schedule(K_MSEC(CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS));
+    }
+    return result;
+}
+#endif
 
 static void d72x40_collect(struct d72x40_status *st) {
     memset(st, 0, sizeof(*st));
@@ -599,6 +703,10 @@ static void d72x40_collect(struct d72x40_status *st) {
     st->studio_lock_available = true;
     st->unlocked = zmk_studio_core_get_lock_state() == ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED;
 #endif
+    const struct zmk_display_72x40_lock_status external =
+        zmk_display_72x40_get_external_lock_status();
+    st->messenger_lock_available = external.available;
+    st->messenger_unlocked = external.unlocked;
 }
 
 static bool d72x40_frame_differs(void) {
@@ -709,15 +817,17 @@ static void d72x40_work_handler(struct k_work *work) {
 
     if (atomic_test_and_clear_bit(&d72x40_flags, D72X40_REDRAW)) {
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
-        if (atomic_get(&d72x40_led_splash_seen) != 0 &&
+        const k_spinlock_key_t splash_key = k_spin_lock(&d72x40_splash_lock);
+        const bool show_splash = atomic_get(&d72x40_led_splash_seen) != 0 &&
             atomic_get(&d72x40_led_splash_ms) != 0 &&
             d72x40_splash_remaining_ms(k_uptime_get_32(),
-                                       (uint32_t)atomic_get(&d72x40_led_changed_at_ms),
-                                       (uint32_t)atomic_get(&d72x40_led_splash_ms)) != 0U) {
-            d72x40_render_led_splash(&d72x40_canvas,
-                                    (uint8_t)atomic_get(&d72x40_led_pattern),
-                                    (uint8_t)atomic_get(&d72x40_led_brightness),
-                                    (uint16_t)atomic_get(&d72x40_led_speed));
+                                      (uint32_t)atomic_get(&d72x40_led_changed_at_ms),
+                                      (uint32_t)atomic_get(&d72x40_led_splash_ms)) != 0U;
+        const uint32_t settings = (uint32_t)atomic_get(&d72x40_led_settings);
+        k_spin_unlock(&d72x40_splash_lock, splash_key);
+        if (show_splash) {
+            d72x40_render_led_splash(&d72x40_canvas, (uint8_t)settings,
+                                    (uint8_t)(settings >> 8), (uint16_t)(settings >> 16));
         } else
 #endif
         {
@@ -726,7 +836,7 @@ static void d72x40_work_handler(struct k_work *work) {
         d72x40_collect(&st);
         d72x40_render(&d72x40_canvas, &st);
         }
-#if D72X40_ROTATION != 0
+#if D72X40_ROTATION == 180
         d72x40_project(&d72x40_canvas, d72x40_want, D72X40_WIDTH, D72X40_PAGES, D72X40_ROTATION);
 #endif
     }
@@ -831,26 +941,35 @@ int zmk_display_72x40_refresh(void) {
     return 0;
 }
 
-static int d72x40_listener(const zmk_event_t *eh) {
+void zmk_display_72x40_show_led_settings(uint8_t pattern, uint8_t brightness, uint16_t speed) {
 #if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
-    const struct zmk_led_pattern_state_changed *led = as_zmk_led_pattern_state_changed(eh);
-    if (led != NULL) {
-        if (atomic_test_bit(&d72x40_flags, D72X40_READY) &&
-            atomic_get(&d72x40_led_splash_ms) != 0) {
-            atomic_set(&d72x40_led_pattern, led->pattern);
-            atomic_set(&d72x40_led_brightness, led->brightness);
-            atomic_set(&d72x40_led_speed, led->speed);
-            atomic_set(&d72x40_led_changed_at_ms, (atomic_val_t)k_uptime_get_32());
-            atomic_set(&d72x40_led_splash_seen, 1);
-            k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
-                                        K_MSEC((uint32_t)atomic_get(&d72x40_led_splash_ms)));
-            d72x40_note_activity();
-            atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
-            d72x40_schedule_now();
+    if (atomic_test_bit(&d72x40_flags, D72X40_READY)) {
+        const k_spinlock_key_t key = k_spin_lock(&d72x40_splash_lock);
+        const uint32_t duration = (uint32_t)atomic_get(&d72x40_led_splash_ms);
+        if (duration == 0) {
+            k_spin_unlock(&d72x40_splash_lock, key);
+            return;
         }
-        return ZMK_EV_EVENT_BUBBLE;
+        const uint32_t settings = (uint32_t)pattern | ((uint32_t)brightness << 8) |
+                                  ((uint32_t)speed << 16);
+        atomic_set(&d72x40_led_settings, (atomic_val_t)settings);
+        atomic_set(&d72x40_led_changed_at_ms, (atomic_val_t)k_uptime_get_32());
+        atomic_set(&d72x40_led_splash_seen, 1);
+        k_work_reschedule_for_queue(zmk_workqueue_lowprio_work_q(), &d72x40_led_splash_work,
+                                    K_MSEC(duration));
+        k_spin_unlock(&d72x40_splash_lock, key);
+        d72x40_note_activity();
+        atomic_set_bit(&d72x40_flags, D72X40_REDRAW);
+        d72x40_schedule_now();
     }
+#else
+    ARG_UNUSED(pattern);
+    ARG_UNUSED(brightness);
+    ARG_UNUSED(speed);
 #endif
+}
+
+static int d72x40_listener(const zmk_event_t *eh) {
     const struct zmk_layer_state_changed *layer = as_zmk_layer_state_changed(eh);
 
     if (layer != NULL) {
@@ -893,9 +1012,6 @@ ZMK_SUBSCRIPTION(display_72x40, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(display_72x40, zmk_position_state_changed);
 ZMK_SUBSCRIPTION(display_72x40, zmk_sensor_event);
 ZMK_SUBSCRIPTION(display_72x40, zmk_endpoint_changed);
-#if IS_ENABLED(CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH)
-ZMK_SUBSCRIPTION(display_72x40, zmk_led_pattern_state_changed);
-#endif
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 /* No endpoint change comes when the active profile connects or drops. */
 ZMK_SUBSCRIPTION(display_72x40, zmk_ble_active_profile_changed);

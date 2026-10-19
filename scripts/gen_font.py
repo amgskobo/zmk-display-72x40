@@ -116,6 +116,14 @@ def render(glyphs, labels):
         "    d72x40_font_ascii[D72X40_FONT_ASCII_LAST - D72X40_FONT_ASCII_FIRST + 1][D72X40_FONT_WIDTH] = {",
     ]
     out += [row(code) for code in range(ASCII_FIRST, ASCII_LAST + 1)]
+    out += ["};", "",
+            "/* Direct quarter-turn symbol rows; bit seven is the left edge. */",
+            "static const uint8_t d72x40_symbol_rows[D72X40_FONT_SYMBOL_COUNT][D72X40_FONT_HEIGHT] = {"]
+    for code in range(SYMBOL_COUNT):
+        columns = glyphs.get(code, [0] * WIDTH)
+        values = [sum(((columns[x] >> y) & 1) << (7 - x) for x in range(WIDTH)) for y in range(HEIGHT)]
+        body = ", ".join(f"0x{v:02x}" for v in values)
+        out.append(f"    {{{body}}}, /* 0x{code:02x} {c_label(code, labels)} */")
     out += ["};", ""]
     return "\n".join(out)
 

@@ -4,3 +4,7 @@
 config ZMK_DISPLAY_72X40_TEST
     bool "Run zmk-display-72x40 runtime self-tests against a recording display"
     depends on ZMK_DISPLAY_72X40
+
+config ZMK_DISPLAY_72X40_TEST_EXTERNAL_PORTS
+    bool "Exercise display inputs without Messenger or an LED producer"
+    depends on ZMK_DISPLAY_72X40_TEST && ZMK_DISPLAY_72X40_LED_SPLASH

@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "host": [
+    "bash",
+    "tests/run-docker.sh"
+  ],
+  "contracts": [
+    {
+      "fixture": "tests/test_display_72x40_core.c",
+      "asserts": "Rendering primitives and exact frame contents; clipped ordinary/fallback/control glyphs; extreme coordinates, zero width for nonpositive cells and saturated unrepresentable text widths"
+    },
+    {
+      "fixture": "tests/test_display_72x40_splash.c",
+      "asserts": "Splash state and timing"
+    },
+    {
+      "fixture": "tests/runtime/full_harness.c",
+      "asserts": "Status binding, exclusive selected HID route/fallback/profile behavior; stale quiet disable/activity interleavings, splash uptime wrap and new tuple publication during old expiry; test_quiet_setter_ordering preserves a newer positive timeout and finite timer after an older zero-timeout setter resumes"
+    },
+    {
+      "fixture": "tests/runtime/power_harness.c",
+      "asserts": "Blank/wake policy"
+    },
+    {
+      "fixture": "tests/runtime/settings_harness.c",
+      "asserts": "Initial values, clamps, invalid/read failures, unrelated-event isolation; actual callbacks with controlled registry/pthread kernel stand-ins preserve newer values across an older paused read"
+    },
+    {
+      "fixture": "tests/runtime/status_harness.c",
+      "asserts": "Unavailable default lock provider"
+    },
+    {
+      "fixture": "tests/runtime/messenger_harness.c",
+      "asserts": "Optional public getter and invalidation adapter"
+    },
+    {
+      "fixture": "tests/runtime/led_patterns_harness.c",
+      "asserts": "Exact numeric tuple forwarding and unrelated-event isolation"
+    },
+    {
+      "fixture": "tests/test_native_storage_selector.py",
+      "asserts": "Actual production preprocessor selector under 20 independent status/chosen rotation metadata combinations"
+    },
+    {
+      "fixture": "tests/test_runtime_coverage.py",
+      "asserts": "Public full runner rejects empty/unrelated synthetic gcov without real compiler execution; each gated range requires measured lines; complete and missed line/branch parsing"
+    },
+    {
+      "fixture": "tests/test_integration_evidence.py",
+      "asserts": "Actual public shell freshness, output mount, command exits and retained owner/graph/compiler evidence; optional repository-scoped read-only deploy-key mounts and missing-key rejection. Recording Docker/west tools only, no firmware or authenticated fetch."
+    },
+    {
+      "fixture": "tests/integration/module/src/runtime_test.c",
+      "asserts": "Actual Zephyr kernel/workqueue behavior with a recording display including quiet decision races, positive timeout re-enable while old disable handler runs, and LED tuple republish during paused expiry when enabled; existing runtime/blank/external-port assertions retained; same ELF repeated three times per configuration"
+    }
+  ],
+  "limits": "Host function extraction and controlled registry/workqueue/tool stand-ins do not prove real scheduling, persistent storage, I2C deadlines or radio/physical behavior; native and unchanged stock/DYA compile variants remain separate.",
+  "execution": {
+    "default": "quick: every host behavioral fixture/scenario under ASan/UBSan once; validator/process units once; native kernel fixtures use the separate integration entry",
+    "full": "ZMK_TEST_MODE=full: same host scenarios plus optimized and measured coverage variants; kernel/supported-core compilation uses separate integration entry",
+    "integration": "owner native/DTS/API guards when interfaces or kernel contracts change; not a prerequisite for pure host behavior",
+    "transport": "actual ordered USB/BLE/split/power/reset evidence; archived simulation is not a passing substitute"
+  }
+}

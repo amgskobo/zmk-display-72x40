@@ -19,8 +19,8 @@ config ZMK_DISPLAY_72X40
     select ZMK_LOW_PRIORITY_WORK_QUEUE
     help
       Draws a status panel on a monochrome, page-tiled display (SSD1306,
-      SSD1309, SH1106) through the Zephyr display API, with a 5x7 font of its
-      own instead of LVGL: the highest active layer in large type, the host
+      SSD1309, SH1106) through the Zephyr display API, with preconverted
+      bitmap fonts instead of LVGL: the highest active layer, the host
       connection, the battery levels of both halves of a split, and Caps Lock
       and Studio's lock where those features are built in.
 
@@ -35,13 +35,29 @@ config ZMK_DISPLAY_72X40
 
 if ZMK_DISPLAY_72X40
 
+config ZMK_DISPLAY_72X40_MESSENGER
+    bool "Bind BLE Messenger's admission lock to the status panel"
+    default y
+    depends on ZMK_BLE_MESSENGER
+    help
+      Optional adapter for Messenger's public lock getter and observer.
+      Disable it to supply a different external lock provider through the
+      display API. The display core does not require Messenger.
+
 config ZMK_DISPLAY_72X40_LED_SPLASH
     bool "Show LED settings briefly when they change"
-    depends on ZMK_LED_PATTERNS
     help
-      Shows the applied LED pattern, brightness and speed when a key or Studio
-      changes them, then returns to the normal status panel. The LED module
-      must be present; panels without it retain their existing behavior.
+      Draws numeric LED settings supplied through the display API and then
+      returns to the status panel. No LED producer is required. The optional
+      LED_PATTERNS adapter supplies values from zmk-led-patterns.
+
+config ZMK_DISPLAY_72X40_LED_PATTERNS
+    bool "Bind zmk-led-patterns events to the LED settings overlay"
+    default y
+    depends on ZMK_DISPLAY_72X40_LED_SPLASH && ZMK_LED_PATTERNS
+    help
+      Optional event adapter. Disable it when a different producer supplies
+      the display's LED settings API. Drawing and expiry remain in the display.
 
 config ZMK_DISPLAY_72X40_LED_SPLASH_MS
     int "Time to show changed LED settings (ms)"
@@ -68,7 +84,8 @@ config ZMK_DISPLAY_72X40_BLANK_AFTER_MS
       Any key press, encoder turn or pointer report switches the panel back
       on, showing whatever changed while it was dark; changes on their own do
       not, so a keyboard left alone stops lighting the panel for a battery
-      reading no one reads. A dark panel draws microamps.
+      reading no one reads. Blanking requests the controller power-save state;
+      actual board current requires measurement.
 
 config ZMK_DISPLAY_72X40_CUSTOM_SETTINGS
     bool "Publish the panel's settings through zmk-feature-custom-settings"
@@ -194,3 +211,11 @@ config ZMK_DISPLAY_72X40_POWER_POLL_MS
     default 2000
     range 100 60000
     depends on ZMK_DISPLAY_72X40_POWER_REPORTER
+
+config ZMK_DISPLAY_72X40_LOG_LEVEL
+    int "zmk-display-72x40 log level (0 off, 1 error, 2 warning, 3 info, 4 debug)"
+    range 0 4
+    default 3
+    help
+      Logs contain operational state and numeric diagnostics, never input
+      contents, user labels, peer addresses or authentication material.

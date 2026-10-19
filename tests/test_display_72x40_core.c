@@ -9,8 +9,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #include <zmk-display-72x40/display_72x40_core.h>
+#include "approved_portrait_frames.h"
+
+_Static_assert(sizeof(d72x40_status_rows) + sizeof(d72x40_status_advance) == 1045, "one compact pixel format and spacing metadata");
 
 static int failures;
 
@@ -123,6 +127,10 @@ static struct d72x40_status split_status(void) {
         .transport = D72X40_TRANSPORT_BLE,
         .link = D72X40_LINK_UP,
         .profile = 1,
+        .ble_available = true,
+        .usb_available = true,
+        .ble_link = D72X40_LINK_UP,
+        .usb_link = D72X40_LINK_DOWN,
         .battery = 85,
         .peer_battery = 72,
     };
@@ -163,6 +171,8 @@ static void test_text_width(void) {
     CHECK(d72x40_text_width(12, D72X40_CELL) == 71);
     CHECK(d72x40_text_width(1, D72X40_WIDE_CELL) == 10);
     CHECK(d72x40_text_width(6, D72X40_WIDE_CELL) == 70);
+    CHECK(d72x40_text_width(1, 0) == 0);
+    CHECK(d72x40_text_width(1, -D72X40_CELL) == 0);
 }
 
 static void test_tall_column(void) {
@@ -280,7 +290,7 @@ static void test_output_line(void) {
 
     st.link = D72X40_LINK_OPEN;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_BLUETOOTH "3 " D72X40_SYM_OPEN, 0, NULL));
+    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_BLUETOOTH "3 ", 0, NULL));
 
     st.transport = D72X40_TRANSPORT_USB;
     st.link = D72X40_LINK_UP;
@@ -410,50 +420,104 @@ static void test_indicator_line(void) {
 }
 
 /* A 72x40 panel turned on its side: 40 columns, nine pages. */
+/* The portrait groups have fixed anchors; state changes never reflow them. */
+static bool row_text_is(const struct d72x40_canvas *cv, int row, int x, const char *text) {
+    struct frame expected;
+    frame_init(&expected, cv->width, cv->pages);
+    bool symbol = (unsigned char)text[0] < 32;
+    int width = symbol ? d72x40_text_width(strlen(text), D72X40_CELL)
+                       : d72x40_status_width(text, SIZE_MAX);
+    int height = symbol ? D72X40_FONT_HEIGHT : D72X40_STATUS_FONT_HEIGHT;
+    if (symbol) {
+        d72x40_text_row(&expected.cv, x, row, text, strlen(text));
+    } else {
+        d72x40_status_text(&expected.cv, x, row, text, SIZE_MAX, false);
+    }
+    for (int y = row; y < row + height; y++) {
+        for (int col = x; col < x + width; col++) {
+            if (pixel(cv, col, y) != pixel(&expected.cv, col, y)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static void test_portrait_layout(void) {
     struct frame f;
     frame_init(&f, 40, 9);
     struct d72x40_status st = split_status();
-
     st.caps_lock = true;
+    st.studio_lock_available = true;
+    st.messenger_lock_available = true;
     d72x40_render(&f.cv, &st);
-    dump(&f.cv, "portrait 40x72");
+    dump(&f.cv, "portrait: two locks, independent BLE/USB, aligned batteries");
 
     int first, last;
-
-    /* Four narrow-tall glyphs are 23 columns, centred in 40. */
     CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
-    CHECK(first == 8);
-    CHECK(last == 30);
-    /* Nine pages for six lines: a blank line between the groups. */
-    CHECK(page_is(&f.cv, 2, 0, NULL, 0, NULL));
-    CHECK(page_is(&f.cv, 3, 0, D72X40_SYM_BLUETOOTH "1 " D72X40_SYM_CHECK, 0, NULL));
-    CHECK(page_is(&f.cv, 4, 0, NULL, 0, NULL));
-    /* Too narrow for both halves side by side: one line each. */
-    CHECK(page_is(&f.cv, 5, 0, "L 85%", 0, NULL));
-    CHECK(page_is(&f.cv, 6, 0, "R 72%", 0, NULL));
-    CHECK(page_is(&f.cv, 7, 0, NULL, 0, NULL));
-    CHECK(page_is(&f.cv, 8, 0, "CAPS", 0, NULL));
+    CHECK(first == 0 && last == 39);
+    CHECK(!row_blank(&f.cv, 1) && row_blank(&f.cv, 14));
+    CHECK(!row_blank(&f.cv, 0) && row_blank(&f.cv, 15));
+    CHECK(row_text_is(&f.cv, 61, 1, "S"));
+    CHECK(row_text_is(&f.cv, 61, 21, "M"));
+    CHECK(row_text_is(&f.cv, 16, 7, "1"));
+    CHECK(row_text_is(&f.cv, 17, 11, D72X40_SYM_CHECK));
+    CHECK(row_text_is(&f.cv, 17, 34, D72X40_SYM_CROSS));
+    CHECK(row_text_is(&f.cv, 27, 7, "CAPS"));
+    CHECK(row_text_is(&f.cv, 38, 1, "L"));
+    CHECK(row_text_is(&f.cv, 38, 15, "85%"));
+    CHECK(row_text_is(&f.cv, 49, 1, "R"));
+    CHECK(row_text_is(&f.cv, 49, 15, "72%"));
+    CHECK(row_blank(&f.cv, 71)); /* outer margin around both locks */
 
-    /* At 100%, the bolt stays after the complete number and still fits. */
+    /* OPEN has no mark, clearing the preceding check; USB stays independent. */
+    for (uint8_t ble = D72X40_LINK_DOWN; ble <= D72X40_LINK_OPEN; ble++) {
+        for (uint8_t usb = D72X40_LINK_DOWN; usb <= D72X40_LINK_UP; usb++) {
+            st.ble_link = ble;
+            st.usb_link = usb;
+            d72x40_render(&f.cv, &st);
+            const char *mark = ble == D72X40_LINK_UP ? D72X40_SYM_CHECK
+                               : ble == D72X40_LINK_OPEN ? " " : D72X40_SYM_CROSS;
+            CHECK(row_text_is(&f.cv, 17, 11, mark));
+            CHECK(row_text_is(&f.cv, 17, 34,
+                              usb == D72X40_LINK_UP ? D72X40_SYM_CHECK : D72X40_SYM_CROSS));
+            CHECK(row_text_is(&f.cv, 38, 15, "85%"));
+        }
+    }
+
     st.battery = 100;
     st.peer_battery = 100;
     st.charging = true;
     st.peer_charging = true;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 5, 0, "L100%" D72X40_SYM_BOLT, 0, NULL));
-    CHECK(page_is(&f.cv, 6, 0, "R100%" D72X40_SYM_BOLT, 0, NULL));
-
+    CHECK(row_text_is(&f.cv, 38, 12, "100%"));
+    CHECK(row_text_is(&f.cv, 39, 34, D72X40_SYM_BOLT));
+    CHECK(row_text_is(&f.cv, 49, 12, "100%"));
+    CHECK(row_text_is(&f.cv, 50, 34, D72X40_SYM_BOLT));
+    st.battery = 255; /* hidden rather than clamped */
+    st.peer_battery = D72X40_BATTERY_UNKNOWN;
+    d72x40_render(&f.cv, &st);
+    CHECK(row_blank(&f.cv, 38));
+    CHECK(row_text_is(&f.cv, 49, 20, "--"));
+    st.battery = 180; /* genuine out-of-range values still clamp */
     st.peer_battery = D72X40_BATTERY_HIDDEN;
     d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 5, 0, "B100%" D72X40_SYM_BOLT, 0, NULL));
+    CHECK(row_text_is(&f.cv, 38, 1, "B"));
+    CHECK(row_text_is(&f.cv, 38, 12, "100%"));
+    CHECK(row_blank(&f.cv, 49));
 
-    /* A name too long for 40 columns takes two lines. */
     strcpy(st.layer, "TEMP-SCROLL");
     d72x40_render(&f.cv, &st);
-    dump(&f.cv, "portrait, wrapped");
-    CHECK(page_is(&f.cv, 0, 5, "TEMP-", 0, NULL));
-    CHECK(page_is(&f.cv, 1, 2, "SCROLL", 0, NULL));
+    CHECK(row_blank(&f.cv, 13) && row_blank(&f.cv, 14)); /* whole-glyph header truncation */
+
+    /* Features omitted by the build leave their own fixed column empty. */
+    st.ble_available = false;
+    st.usb_available = false;
+    st.studio_lock_available = false;
+    st.messenger_lock_available = false;
+    st.caps_lock = false;
+    d72x40_render(&f.cv, &st);
+    CHECK(row_blank(&f.cv, 61) && row_blank(&f.cv, 16) && row_blank(&f.cv, 27));
 }
 
 static void test_portrait_studio_lock(void) {
@@ -461,23 +525,66 @@ static void test_portrait_studio_lock(void) {
     frame_init(&f, 40, 9);
     struct d72x40_status st = split_status();
     st.studio_lock_available = true;
-    st.caps_lock = true;
+    st.messenger_lock_available = true;
+    for (int studio = 0; studio <= 1; studio++) {
+        for (int messenger = 0; messenger <= 1; messenger++) {
+            st.unlocked = studio != 0;
+            st.messenger_unlocked = messenger != 0;
+            d72x40_render(&f.cv, &st);
+            CHECK(pixel(&f.cv, 10, 62) == !st.unlocked);
+            CHECK(pixel(&f.cv, 17, 62) == st.unlocked);
+            CHECK(pixel(&f.cv, 9, 65)); /* Studio body never moves */
+            CHECK(pixel(&f.cv, 31, 62) == !st.messenger_unlocked);
+            CHECK(pixel(&f.cv, 38, 62) == st.messenger_unlocked);
+            CHECK(pixel(&f.cv, 30, 65)); /* Messenger body never moves */
+            CHECK(row_text_is(&f.cv, 38, 15, "85%"));
+            CHECK(row_text_is(&f.cv, 49, 15, "72%"));
+        }
+    }
+}
 
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, NULL, 0, NULL));
-    CHECK(pixel(&f.cv, 30, 25)); /* closed shackle, left side */
-    CHECK(!pixel(&f.cv, 39, 25));
-    CHECK(pixel(&f.cv, 28, 28)); /* body remains in place */
-    CHECK(page_is(&f.cv, 5, 0, "L 85%", 0, NULL));
-    CHECK(page_is(&f.cv, 6, 0, "R 72%", 0, NULL));
-    CHECK(page_is(&f.cv, 8, 0, "CAPS", 0, NULL));
+static void test_portrait_boundaries(void) {
+    struct frame f;
+    frame_init(&f, 40, 9);
+    /* A nine-pixel USB column crosses a page even at an aligned row. */
+    d72x40_column_row(&f.cv, 0, 0, 0x1ff);
+    CHECK(f.buf[0] == 0xff && f.buf[40] == 1);
+    d72x40_column_row(&f.cv, 1, 7, 0x1ff);
+    CHECK(f.buf[1] == 0x80 && f.buf[41] == 0xff);
+    d72x40_column_row(&f.cv, 39, 71, 0x1ff);
+    CHECK(f.buf[8 * 40 + 39] == 0x80);
+    d72x40_column_row(&f.cv, 40, 0, 0x1ff);
+    d72x40_column_row(&f.cv, 2, -1, 0x1ff);
+    d72x40_column_row(&f.cv, 2, 72, 0x1ff);
+    CHECK(f.buf[2] == 0); /* off-screen columns do not wrap */
 
-    st.unlocked = true;
+    struct d72x40_status st = split_status();
+    st.profile = 99;
+    strcpy(st.layer, "NUM");
     d72x40_render(&f.cv, &st);
-    CHECK(!pixel(&f.cv, 30, 25));
-    CHECK(pixel(&f.cv, 39, 25)); /* shackle swings right */
-    CHECK(!pixel(&f.cv, 39, 27)); /* visible gap above body */
-    CHECK(pixel(&f.cv, 28, 28));
+    CHECK(row_text_is(&f.cv, 16, 7, "99"));
+    CHECK(row_text_is(&f.cv, 17, 18, D72X40_SYM_CHECK));
+    st.profile = 255;
+    d72x40_render(&f.cv, &st);
+    CHECK(row_text_is(&f.cv, 16, 1, "255"));
+    CHECK(row_text_is(&f.cv, 17, 17, D72X40_SYM_CHECK));
+    CHECK(row_text_is(&f.cv, 17, 34, D72X40_SYM_CROSS));
+
+    /* A short portrait uses the compact page layout and stays in bounds. */
+    frame_init(&f, 40, 8);
+    st.battery = 100;
+    st.peer_battery = D72X40_BATTERY_HIDDEN;
+    st.charging = true;
+    d72x40_render(&f.cv, &st);
+    CHECK(page_is(&f.cv, 5, 0, "B100%" D72X40_SYM_BOLT, 0, NULL));
+    for (size_t i = 40u * 8u; i < sizeof(f.buf); i++) {
+        CHECK(f.buf[i] == 0);
+    }
+    frame_init(&f, 39, 9);
+    d72x40_render(&f.cv, &st);
+    for (size_t i = 39u * 9u; i < sizeof(f.buf); i++) {
+        CHECK(f.buf[i] == 0);
+    }
 }
 
 static int count_lit(const struct d72x40_canvas *cv) {
@@ -549,6 +656,311 @@ static void test_rotation(void) {
     /* No turn at all is a copy. */
     d72x40_project(&flat.cv, panel.buf, 72, 5, 0);
     CHECK(memcmp(flat.buf, panel.buf, 72 * 5) == 0);
+}
+
+/* Independent pixel coordinates specify the panel output, without calling
+ * the production projector, row writer or logical pixel getter. */
+static void reference_turn(const struct d72x40_canvas *logical, uint8_t *out, uint16_t rotation) {
+    int height = (int)logical->pages * 8;
+    memset(out, 0, (size_t)logical->width * logical->pages);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < (int)logical->width; x++) {
+            if (!pixel(logical, x, y)) {
+                continue;
+            }
+            int px = rotation == 90 ? y : height - 1 - y;
+            int py = rotation == 90 ? (int)logical->width - 1 - x : x;
+            size_t at = (size_t)(py / 8) * (size_t)height + (size_t)px;
+            out[at] = (uint8_t)(out[at] | (uint8_t)(1u << (py % 8)));
+        }
+    }
+}
+
+static void check_native(const struct frame *logical, const struct frame *native) {
+    uint8_t expected[MAX_WIDTH * MAX_PAGES];
+    reference_turn(&logical->cv, expected, native->cv.rotation);
+    CHECK(memcmp(expected, native->buf, (size_t)logical->cv.width * logical->cv.pages) == 0);
+}
+
+/* Pixel coordinates independently specify packed rows and all storage layouts. */
+static void test_bitmap_edges(void) {
+    const uint8_t rows[11] = {0xa7, 0x59, 0x80, 0x01, 0xff, 0x00, 0x18, 0x42, 0x81, 0x7e, 0x24};
+    const int positions[] = {INT_MIN, -17, -9, -8, -1, 0, 7, 31, 39, 40};
+    const uint16_t rotations[] = {0, 90, 270};
+    struct frame actual, expected;
+    for (size_t r = 0; r < 3; r++) {
+        for (size_t p = 0; p < sizeof(positions) / sizeof(positions[0]); p++) {
+            for (int row = -1; row <= 72; row++) {
+                for (unsigned erasing = 0; erasing < 2; erasing++) {
+                    frame_init(&actual, 40, 9); frame_init(&expected, 40, 9);
+                    actual.cv.rotation = rotations[r];
+                    memset(actual.buf, erasing ? 0xff : 0, sizeof(actual.buf));
+                    memset(expected.buf, erasing ? 0xff : 0, sizeof(expected.buf));
+                    if (rotations[r] == 0) {
+                        d72x40_logical_bitmap(&actual.cv, positions[p], row, rows, 11, erasing != 0);
+                    } else {
+                        d72x40_native_bitmap(&actual.cv, positions[p], row, rows, 11, erasing != 0);
+                    }
+                    if (row >= 0 && row < 72) {
+                        for (unsigned y = 0; y < 11; y++) {
+                            for (unsigned col = 0; col < 8; col++) {
+                                int x = positions[p] + (int)col;
+                                int py = row + (int)y;
+                                if (x >= 0 && x < 40 && py < 72 && (rows[y] & (0x80u >> col))) {
+                                    size_t at = (size_t)(py / 8) * 40 + (size_t)x;
+                                    uint8_t ink = (uint8_t)(1u << (py % 8));
+                                    expected.buf[at] = erasing
+                                        ? (uint8_t)(expected.buf[at] & (uint8_t)~ink)
+                                        : (uint8_t)(expected.buf[at] | ink);
+                                }
+                            }
+                        }
+                    }
+                    if (rotations[r] == 0) {
+                        CHECK(memcmp(actual.buf, expected.buf, sizeof(actual.buf)) == 0);
+                    } else {
+                        check_native(&expected, &actual);
+                        CHECK(memcmp(actual.buf + 360, expected.buf + 360, sizeof(actual.buf) - 360) == 0);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void test_direct_primitives(void) {
+    for (uint16_t rotation = 90; rotation <= 270; rotation = (uint16_t)(rotation + 180)) {
+        struct frame logical, native;
+        frame_init(&logical, 40, 9); frame_init(&native, 40, 9);
+        native.cv.rotation = rotation;
+        unsigned seed = 7351;
+        for (unsigned i = 0; i < 300; i++) {
+            seed = seed * 1664525u + 1013904223u;
+            int x = (int)(seed % 44) - 2;
+            int page = (int)((seed >> 8) % 12) - 1;
+            uint8_t bits = (uint8_t)(seed >> 16);
+            bool erase = (i & 1u) != 0;
+            d72x40_mask(&logical.cv, x, page, bits, erase);
+            d72x40_mask(&native.cv, x, page, bits, erase);
+        }
+        check_native(&logical, &native);
+        for (int y = -1; y <= 72; y++) {
+            for (int x = -1; x <= 40; x++) {
+                bool expected = x >= 0 && x < 40 && y >= 0 && y < 72 && pixel(&logical.cv, x, y);
+                CHECK(d72x40_canvas_pixel(&native.cv, x, y) == expected);
+            }
+        }
+        /* Nine-pixel lock masks retain clipping and zero-row behavior. */
+        const int positions[] = {INT_MIN, -9, -1, 0, 7, 31, 39, 40};
+        for (size_t p = 0; p < sizeof(positions) / sizeof(positions[0]); p++) {
+            for (int row = -1; row <= 72; row++) {
+                d72x40_clear(&logical.cv); d72x40_clear(&native.cv);
+                uint16_t bits = row % 3 == 0 ? 0 : UINT16_C(0x195);
+                d72x40_native_lock_row(&native.cv, positions[p], row, bits);
+                if (row >= 0 && row < 72) {
+                    for (unsigned bit = 0; bit < 9; bit++) {
+                        int x = positions[p] + (int)bit;
+                        if (((unsigned)bits >> bit) & 1u) {
+                            d72x40_mask(&logical.cv, x, row / 8, (uint8_t)(1u << (row % 8)), false);
+                        }
+                    }
+                }
+                check_native(&logical, &native);
+            }
+        }
+        for (unsigned open = 0; open < 2; open++) {
+            d72x40_status_lock(&native.cv, -9, 0, open != 0);
+            d72x40_status_lock(&native.cv, 40, 0, open != 0);
+        }
+        for (unsigned code = 31; code <= 127; code++) {
+            const char text[2] = {(char)code, '\0'};
+            for (int x = -2; x <= 40; x += 7) {
+                for (int row = 0; row < 72; row += 7) {
+                    d72x40_clear(&logical.cv); d72x40_clear(&native.cv);
+                    d72x40_status_text(&logical.cv, x, row, text, 1, false);
+                    d72x40_status_text(&native.cv, x, row, text, 1, false);
+                    check_native(&logical, &native);
+                    d72x40_status_text(&logical.cv, x, row, text, 1, true);
+                    d72x40_status_text(&native.cv, x, row, text, 1, true);
+                    check_native(&logical, &native);
+                }
+            }
+        }
+        /* Independent old column symbols specify the new native row path. */
+        const int symbol_x[] = {-9, -8, -1, 0, 33, 39, 40};
+        for (unsigned code = 1; code < D72X40_FONT_SYMBOL_COUNT; code++) {
+            const char text[2] = {(char)code, '\0'};
+            for (size_t p = 0; p < sizeof(symbol_x) / sizeof(symbol_x[0]); p++) {
+                for (int row = 0; row <= 72; row++) {
+                    d72x40_clear(&logical.cv);d72x40_clear(&native.cv);
+                    d72x40_text_row(&logical.cv, symbol_x[p], row, text, 1);
+                    d72x40_text_row(&native.cv, symbol_x[p], row, text, 1);
+                    check_native(&logical, &native);
+                }
+            }
+        }
+        uint8_t unchanged[sizeof(native.buf)];memcpy(unchanged, native.buf, sizeof(unchanged));
+        d72x40_native_bitmap(&native.cv, 0, -1, d72x40_symbol_rows[1], 7, false);
+        CHECK(memcmp(unchanged, native.buf, sizeof(unchanged)) == 0);
+        /* Native row masks clip all four edges without a glyph conversion. */
+        for (int x = -1; x <= 72; x += 1) {
+            for (int y = -9; y <= 40; y += 1) {
+                for (unsigned erasing = 0; erasing < 2; erasing++) {
+                    memset(native.buf, erasing ? 0xff : 0, sizeof(native.buf));
+                    uint8_t expected[MAX_WIDTH * MAX_PAGES];
+                    memset(expected, erasing ? 0xff : 0, sizeof(expected));
+                    /* Same physical single-row specification, through the
+                     * retained bitmap entry point after row-helper removal. */
+                    const uint8_t rows[1] = {rotation == 90 ? 0xa9 : d72x40_reverse_byte(0xa9)};
+                    int logical_x = rotation == 90 ? 40 - y - 8 : y;
+                    int logical_row = rotation == 90 ? x : 71 - x;
+                    d72x40_native_bitmap(&native.cv, logical_x, logical_row, rows, 1, erasing != 0);
+                    for (int bit = 0; bit < 8; bit++) {
+                        int py = y + bit;
+                        if (x >= 0 && x < 72 && py >= 0 && py < 40 && (0xa9u & (1u << bit))) {
+                            size_t at = (size_t)(py / 8) * 72 + (size_t)x;
+                            uint8_t ink = (uint8_t)(1u << (py % 8));
+                            expected[at] = erasing ? (uint8_t)(expected[at] & (uint8_t)~ink)
+                                                    : (uint8_t)(expected[at] | ink);
+                        }
+                    }
+                    CHECK(memcmp(native.buf, expected, 360) == 0);
+                }
+            }
+        }
+        for (unsigned open = 0; open < 2; open++) {
+            d72x40_clear(&logical.cv); d72x40_clear(&native.cv);
+            d72x40_status_lock(&logical.cv, -1, 68, open != 0);
+            d72x40_status_lock(&native.cv, -1, 68, open != 0);
+            check_native(&logical, &native);
+        }
+        frame_init(&logical, 16, 1); frame_init(&native, 16, 1);
+        native.cv.rotation = rotation;
+        d72x40_status_header(&logical.cv); d72x40_status_header(&native.cv);
+        check_native(&logical, &native);
+        const uint16_t widths[] = {40, 56, 72};
+        const uint16_t pages[] = {9, 7, 5};
+        for (size_t shape = 0; shape < 3; shape++) {
+            frame_init(&logical, widths[shape], pages[shape]);
+            frame_init(&native, widths[shape], pages[shape]);native.cv.rotation = rotation;
+            for (unsigned pattern = 0; pattern <= 18; pattern++) {
+                d72x40_render_led_splash(&logical.cv, (uint8_t)pattern, UINT8_MAX, UINT16_MAX);
+                d72x40_render_led_splash(&native.cv, (uint8_t)pattern, UINT8_MAX, UINT16_MAX);
+                check_native(&logical, &native);
+            }
+        }
+    }
+}
+
+static void test_approved_portrait_frames(void) {
+    for (size_t i = 0; i < sizeof(d72x40_approved_frames) / sizeof(d72x40_approved_frames[0]); i++) {
+        const struct d72x40_approved_frame *g = &d72x40_approved_frames[i];
+        struct frame f;
+        frame_init(&f, 40, 9);
+        struct d72x40_status st = {.profile = 2, .ble_available = true, .usb_available = true,
+            .ble_link = g->route == 0 ? D72X40_LINK_UP : g->route == 1 ? D72X40_LINK_OPEN : D72X40_LINK_DOWN,
+            .usb_link = g->route == 1 ? D72X40_LINK_UP : D72X40_LINK_OPEN,
+            .battery = g->battery, .peer_battery = g->peer_battery,
+            .studio_lock_available = true, .messenger_lock_available = true,
+            .unlocked = g->studio, .messenger_unlocked = g->messenger,
+            .caps_lock = g->caps, .charging = g->charging};
+        strcpy(st.layer, g->layer);
+        d72x40_render(&f.cv, &st);
+        for (uint16_t rotation = 90; rotation <= 270; rotation = (uint16_t)(rotation + 180)) {
+            struct frame native;frame_init(&native, 40, 9);native.cv.rotation = rotation;
+            d72x40_render(&native.cv, &st);
+            check_native(&f, &native);
+        }
+        if (memcmp(f.buf, g->pixels, sizeof(g->pixels)) != 0) {
+            fprintf(stderr, "approved portrait frame %zu differs\n", i);
+            failures++;
+        }
+        /* Migrated from the retired private-font-mode fixture. */
+        st.profile = UINT8_MAX;
+        st.peer_charging = true;
+        d72x40_render(&f.cv, &st);
+        for (uint16_t rotation = 90; rotation <= 270; rotation = (uint16_t)(rotation + 180)) {
+            struct frame native; frame_init(&native, 40, 9); native.cv.rotation = rotation;
+            d72x40_render(&native.cv, &st);
+            check_native(&f, &native);
+        }
+    }
+}
+
+static void test_projection_coordinates(void) {
+    /* Independent coordinates check every bit, including dense frames. */
+    struct frame canvas, panel;
+    frame_init(&canvas, 40, 9);
+    frame_init(&panel, 72, 5);
+    uint32_t random = 0x1248abcd;
+    for (unsigned run = 0; run < 100; run++) {
+        for (size_t i = 0; i < 360; i++) {
+            random = random * 1664525u + 1013904223u;
+            canvas.buf[i] = (uint8_t)(random >> 24);
+        }
+        const uint16_t rotations[2] = {90, 270};
+        for (unsigned turn = 0; turn < 2; turn++) {
+            d72x40_project(&canvas.cv, panel.buf, 72, 5, rotations[turn]);
+            for (int y = 0; y < 72; y++) {
+                for (int x = 0; x < 40; x++) {
+                    int px = turn == 0 ? y : 71 - y;
+                    int py = turn == 0 ? 39 - x : x;
+                    CHECK(pixel(&canvas.cv, x, y) == pixel(&panel.cv, px, py));
+                }
+            }
+        }
+    }
+
+}
+
+static void test_status_font_boundaries(void) {
+    struct frame f;
+    frame_init(&f, 40, 4);
+    CHECK(d72x40_status_glyph(0) == d72x40_status_glyph('?'));
+    CHECK(d72x40_status_glyph(255) == d72x40_status_glyph('?'));
+    CHECK(d72x40_status_width("AB", 0) == 0);
+    CHECK(d72x40_status_width("AB", 1) == 6);
+    d72x40_mask(&f.cv, -1, 0, 0xff, false);
+    d72x40_mask(&f.cv, 40, 0, 0xff, false);
+    d72x40_mask(&f.cv, 0, -1, 0xff, false);
+    d72x40_mask(&f.cv, 0, 4, 0xff, false);
+    d72x40_status_text(&f.cv, 0, -1, "A", 1, false);
+    d72x40_status_text(&f.cv, 0, 32, "A", 1, false);
+    d72x40_status_lock(&f.cv, 0, -1, true);
+    d72x40_status_lock(&f.cv, 0, 32, false);
+    for (size_t i = 0; i < sizeof(f.buf); i++) {
+        CHECK(f.buf[i] == 0);
+    }
+    /* A descender at row seven crosses a third page, in both ink modes. */
+    d72x40_status_text(&f.cv, 0, 7, "gA", 1, false);
+    CHECK(pixel(&f.cv, 1, 16));
+    CHECK(!pixel(&f.cv, 0, 16));
+    memset(f.buf, 0xff, 160);
+    d72x40_status_text(&f.cv, 0, 7, "g", 2, true);
+    CHECK(!pixel(&f.cv, 1, 16));
+    CHECK(pixel(&f.cv, 0, 16));
+    d72x40_status_text(&f.cv, -3, 31, "AB", 2, false);
+    d72x40_status_centred(&f.cv, 0, "", false);
+
+    /* Nonmatching shapes still use the bounded coordinate implementation. */
+    struct frame panel;
+    frame_init(&panel, 72, 5);
+    for (unsigned shape = 0; shape < 2; shape++) {
+        frame_init(&f, shape == 0 ? 41 : 40, shape == 0 ? 9 : 8);
+        memset(f.buf, 0x96, (size_t)f.cv.width * f.cv.pages);
+        for (unsigned turn = 0; turn < 2; turn++) {
+            d72x40_project(&f.cv, panel.buf, 72, 5, turn == 0 ? 90 : 270);
+            for (int y = 0; y < 40; y++) {
+                for (int x = 0; x < 72; x++) {
+                    int cx = turn == 0 ? (int)f.cv.width - 1 - y : y;
+                    int cy = turn == 0 ? x : (int)f.cv.pages * 8 - 1 - x;
+                    bool expected = cx >= 0 && cx < (int)f.cv.width && cy >= 0 &&
+                                    cy < (int)f.cv.pages * 8 && pixel(&f.cv, cx, cy);
+                    CHECK(pixel(&panel.cv, x, y) == expected);
+                }
+            }
+        }
+    }
 }
 
 static void test_render_is_a_pure_function(void) {
@@ -718,6 +1130,80 @@ static void test_led_splash(void) {
 
 static void test_small_canvas_and_offscreen_guards(void) {
     struct frame f;
+    /* Invalid top coordinates drop the whole glyph, in every storage layout. */
+    const uint16_t rotations[] = {0, 90, 270};
+    const int invalid_rows[] = {-1, INT_MIN, 72};
+    const char *const glyphs[] = {"A", "\x80", D72X40_SYM_CHECK};
+    uint8_t untouched[sizeof(f.buf)];
+    for (size_t r = 0; r < sizeof(rotations) / sizeof(rotations[0]); r++) {
+        for (size_t y = 0; y < sizeof(invalid_rows) / sizeof(invalid_rows[0]); y++) {
+            for (size_t g = 0; g < sizeof(glyphs) / sizeof(glyphs[0]); g++) {
+                frame_init(&f, 40, 9);
+                f.cv.rotation = rotations[r];
+                memset(f.buf, 0x5a, sizeof(f.buf));
+                memcpy(untouched, f.buf, sizeof(untouched));
+                d72x40_text_row(&f.cv, 0, invalid_rows[y], glyphs[g], 1);
+                CHECK(memcmp(f.buf, untouched, sizeof(f.buf)) == 0);
+            }
+        }
+    }
+
+
+    /* Public text coordinates may be anywhere in int; off-right glyphs cannot
+     * re-enter the canvas. Only an unrepresentable next-x saturates. */
+    for (size_t r = 0; r < sizeof(rotations) / sizeof(rotations[0]); r++) {
+        frame_init(&f, 40, 9);
+        f.cv.rotation = rotations[r];
+        memset(f.buf, 0x5a, sizeof(f.buf));
+        memcpy(untouched, f.buf, sizeof(untouched));
+        CHECK(d72x40_text_n(&f.cv, INT_MAX, 0, "A", 1) == INT_MAX);
+        CHECK(d72x40_text_n(&f.cv, INT_MAX - 6, 0, "A", 1) == INT_MAX);
+        CHECK(d72x40_text_n(&f.cv, INT_MAX - 5, 0, "A", 1) == INT_MAX);
+        CHECK(d72x40_text_n(&f.cv, 40, 0, "AB", 2) == 52);
+        CHECK(d72x40_text_n(&f.cv, 100, 0, "AB", 2) == 112);
+        CHECK(d72x40_text_n(&f.cv, INT_MIN, 0, "AB", 2) == INT_MIN + 12);
+        const int offscreen_x[] = {INT_MIN, 40, INT_MAX};
+        for (size_t x = 0; x < sizeof(offscreen_x) / sizeof(offscreen_x[0]); x++) {
+            for (size_t g = 0; g < sizeof(glyphs) / sizeof(glyphs[0]); g++) {
+                d72x40_text_row(&f.cv, offscreen_x[x], 0, glyphs[g], 1);
+                d72x40_text_tall(&f.cv, offscreen_x[x], 0, glyphs[g], 1, false);
+                d72x40_text_tall(&f.cv, offscreen_x[x], 0, glyphs[g], 1, true);
+                d72x40_status_text(&f.cv, offscreen_x[x], 0, glyphs[g], 1, false);
+                d72x40_status_text(&f.cv, offscreen_x[x], 0, glyphs[g], 1, true);
+            }
+        }
+        d72x40_text_tall(&f.cv, 0, INT_MAX, "A", 1, false);
+        CHECK(memcmp(f.buf, untouched, sizeof(f.buf)) == 0);
+
+        struct frame expected;
+        frame_init(&f, 40, 9);
+        frame_init(&expected, 40, 9);
+        f.cv.rotation = expected.cv.rotation = rotations[r];
+        CHECK(d72x40_text_n(&f.cv, -6, 0, "BA", 2) == 6);
+        d72x40_text_n(&expected.cv, 0, 0, "A", 1);
+        CHECK(memcmp(f.buf, expected.buf, sizeof(f.buf)) == 0);
+        d72x40_clear(&f.cv);
+        d72x40_clear(&expected.cv);
+        d72x40_text_tall(&f.cv, -12, 0, "BA", 2, true);
+        d72x40_text_tall(&expected.cv, 0, 0, "A", 1, true);
+        CHECK(memcmp(f.buf, expected.buf, sizeof(f.buf)) == 0);
+        d72x40_clear(&f.cv);
+        d72x40_clear(&expected.cv);
+        d72x40_text_row(&f.cv, -6, 1, "BA", 2);
+        d72x40_text_row(&expected.cv, 0, 1, "A", 1);
+        CHECK(memcmp(f.buf, expected.buf, sizeof(f.buf)) == 0);
+    }
+
+    /* Width arithmetic stays exact through the last representable result. */
+    const size_t narrow_limit = ((size_t)INT_MAX + 1u) / 6u;
+    const size_t wide_limit = ((size_t)INT_MAX + 2u) / 12u;
+    CHECK(d72x40_text_width(narrow_limit, D72X40_CELL) == (int)(narrow_limit * 6u - 1u));
+    CHECK(d72x40_text_width(narrow_limit + 1u, D72X40_CELL) == INT_MAX);
+    CHECK(d72x40_text_width(wide_limit, D72X40_WIDE_CELL) == (int)(wide_limit * 12u - 2u));
+    CHECK(d72x40_text_width(wide_limit + 1u, D72X40_WIDE_CELL) == INT_MAX);
+    CHECK(d72x40_text_width(SIZE_MAX, D72X40_CELL) == INT_MAX);
+    CHECK(d72x40_text_width(SIZE_MAX, D72X40_WIDE_CELL) == INT_MAX);
+
     frame_init(&f, 24, 2);
     d72x40_plot(&f.cv, -1, 0, 0xff);
     d72x40_plot(&f.cv, 24, 0, 0xff);
@@ -776,6 +1262,295 @@ static void test_small_canvas_and_offscreen_guards(void) {
     d72x40_render_led_splash(&f.cv, 1, 100, 100);
 }
 
+/* True when columns x0..x1-1 of page are what text at text_x (or nothing) draws there. */
+static bool columns_are(const struct d72x40_canvas *cv, int page, int x0, int x1, int text_x,
+                        const char *text) {
+    struct frame expect;
+    frame_init(&expect, cv->width, cv->pages);
+    if (text != NULL) {
+        d72x40_text(&expect.cv, text_x, page, text);
+    }
+    return memcmp(&cv->buf[(size_t)page * cv->width + (size_t)x0],
+                  &expect.buf[(size_t)page * cv->width + (size_t)x0], (size_t)(x1 - x0)) == 0;
+}
+
+static bool battery_is(uint16_t width, uint8_t own, uint8_t peer, const char *left,
+                       const char *right, bool stacked) {
+    struct frame f;
+    struct d72x40_battery_text text;
+    struct d72x40_status st = {.battery = own, .peer_battery = peer};
+
+    frame_init(&f, width, 5);
+    d72x40_battery_text(&f.cv, &st, &text);
+    return strcmp(text.left, left) == 0 && strcmp(text.right, right) == 0 &&
+           text.stacked == stacked && !text.empty;
+}
+
+/*
+ * Every limit exactly: the first value past a bound and the last one inside
+ * it, found missing by mutating each comparison of the core.
+ */
+static void test_exact_limits(void) {
+    /* Numbers, all of their digits. */
+    char text[8] = "S";
+    d72x40_append_u16(text, sizeof(text), 150);
+    CHECK(strcmp(text, "S150") == 0);
+    text[0] = '\0';
+    d72x40_append_u16(text, sizeof(text), 0);
+    CHECK(strcmp(text, "0") == 0);
+    text[0] = '\0';
+    d72x40_append_u16(text, sizeof(text), 65535);
+    CHECK(strcmp(text, "65535") == 0);
+
+    /* The last character of the font is its own glyph, not the fallback. */
+    CHECK(d72x40_glyph(D72X40_FONT_ASCII_LAST) ==
+          d72x40_font_ascii[D72X40_FONT_ASCII_LAST - D72X40_FONT_ASCII_FIRST]);
+    /* A font column has seven rows; an eighth bit is not one of them. */
+    CHECK(d72x40_tall_column(0xff) == 0x7ffe);
+
+    /* Plotting and reading stop exactly at the canvas edges: the byte after a
+     * page's last column is the next page's first, and after the last page
+     * comes whatever follows the buffer. */
+    uint8_t exact[8 * 2 + 8];
+    memset(exact, 0, sizeof(exact));
+    struct d72x40_canvas small = {.buf = exact, .width = 8, .pages = 2};
+    d72x40_plot(&small, 0, 0, 0x01);
+    d72x40_plot(&small, 8, 0, 0xff);
+    d72x40_plot(&small, 0, 2, 0xff);
+    CHECK(exact[0] == 0x01 && exact[8] == 0 && exact[16] == 0);
+    memset(exact, 0xff, sizeof(exact));
+    memset(exact, 0, 8);
+    CHECK(!d72x40_canvas_pixel(&small, 8, 0) && !d72x40_canvas_pixel(&small, 0, 16));
+    CHECK(d72x40_canvas_pixel(&small, 7, 15));
+
+    /* A turned copy fills the frame and not a byte past it. */
+    struct frame src;
+    frame_init(&src, 16, 2);
+    memset(src.buf, 0x5a, 32);
+    for (uint16_t rotation = 90; rotation <= 270; rotation += 90) {
+        uint8_t turned[16 * 2 + 8];
+        memset(turned, 0xaa, sizeof(turned));
+        d72x40_project(&src.cv, turned, 16, 2, rotation);
+        for (size_t i = 32; i < sizeof(turned); i++) {
+            CHECK(turned[i] == 0xaa);
+        }
+    }
+
+    /* At most max glyphs, in either size. */
+    struct frame f;
+    frame_init(&f, 72, 2);
+    CHECK(d72x40_text_n(&f.cv, 0, 0, "AB", 1) == D72X40_CELL);
+    CHECK(columns_are(&f.cv, 0, 0, 72, 0, "A"));
+    frame_init(&f, 72, 2);
+    d72x40_text_tall(&f.cv, 0, 0, "AB", 1, false);
+    for (int y = 0; y < 16; y++) {
+        for (int x = D72X40_CELL; x < 72; x++) {
+            CHECK(!pixel(&f.cv, x, y));
+        }
+    }
+
+    /* Two pages are enough for the large layer name. */
+    frame_init(&f, 72, 2);
+    CHECK(d72x40_render_layer(&f.cv, "NAV") == 2);
+    /* A name exactly one narrow line long stays one line, centred in the
+     * block rather than wrapped from its top. */
+    frame_init(&f, 72, 5);
+    CHECK(d72x40_render_layer(&f.cv, "ABCDEFGHIJKL") == 2);
+    CHECK(row_blank(&f.cv, 0) && !row_blank(&f.cv, 4));
+
+    /* The Studio word: from 54 columns, and only clear of the host text. */
+    frame_init(&f, 54, 2);
+    d72x40_render_studio_lock(&f.cv, 0, true, 0);
+    CHECK(columns_are(&f.cv, 0, 15, 39, 15, "OPEN"));
+    frame_init(&f, 54, 2);
+    d72x40_render_studio_lock(&f.cv, 0, true, 15);
+    CHECK(columns_are(&f.cv, 0, 0, 39, 0, NULL));
+    frame_init(&f, 40, 2);
+    d72x40_render_studio_lock(&f.cv, 0, true, 0);
+    CHECK(columns_are(&f.cv, 0, 0, 25, 0, NULL));
+
+    /* Only the 40-column panel with a Studio mark drops the space before the
+     * USB cross. */
+    struct d72x40_status st = {.transport = D72X40_TRANSPORT_USB, .link = D72X40_LINK_DOWN,
+                               .studio_lock_available = true};
+    frame_init(&f, 72, 5);
+    d72x40_render_output(&f.cv, 0, &st);
+    CHECK(columns_are(&f.cv, 0, 0, 30, 0, "USB " D72X40_SYM_CROSS));
+    st.studio_lock_available = false;
+    frame_init(&f, 40, 9);
+    d72x40_render_output(&f.cv, 0, &st);
+    CHECK(columns_are(&f.cv, 0, 0, 30, 0, "USB " D72X40_SYM_CROSS));
+
+    /* Battery text at widths where it fits exactly (n glyphs are 6n - 1
+     * columns), and one space narrower at a time. */
+    struct d72x40_status none = {.battery = D72X40_BATTERY_HIDDEN,
+                                 .peer_battery = D72X40_BATTERY_HIDDEN};
+    struct d72x40_battery_text bt;
+    frame_init(&f, 72, 5);
+    d72x40_battery_text(&f.cv, &none, &bt);
+    CHECK(bt.empty && d72x40_battery_pages(&f.cv, &none) == 0);
+    CHECK(battery_is(41, 87, D72X40_BATTERY_HIDDEN, "BAT 87%", "", false));
+    CHECK(battery_is(29, 87, D72X40_BATTERY_HIDDEN, "B 87%", "", false));
+    CHECK(battery_is(65, 87, 42, "L 87%", "R 42%", false));
+    CHECK(battery_is(59, 87, 42, "L87%", "R 42%", false));
+    CHECK(battery_is(53, 87, 42, "L87%", "R42%", false));
+    CHECK(battery_is(29, 87, 42, "L 87%", "R 42%", true));
+    CHECK(battery_is(29, D72X40_BATTERY_HIDDEN, 42, "", "R 42%", false));
+
+    /* Side by side the batteries take one page. */
+    struct d72x40_status split = {.battery = 87, .peer_battery = 42};
+    frame_init(&f, 72, 5);
+    CHECK(d72x40_render_battery(&f.cv, 2, &split) == 3);
+
+    /* The first number past the pattern names has none. */
+    CHECK(strcmp(d72x40_led_pattern_name(18), "?") == 0);
+
+    /* The splash stands up only on a narrow, tall canvas. */
+    static const struct {
+        uint16_t width, pages;
+        bool landscape;
+    } splash[] = {{66, 9, true}, {72, 9, true}, {40, 7, false}, {40, 6, true}};
+    for (size_t i = 0; i < sizeof(splash) / sizeof(splash[0]); i++) {
+        frame_init(&f, splash[i].width, splash[i].pages);
+        d72x40_render_led_splash(&f.cv, 5, 60, 150);
+        CHECK(pixel(&f.cv, 0, 8)); /* normal text or the new inverted portrait header */
+        CHECK(pixel(&f.cv, 0, 0) != splash[i].landscape);
+    }
+
+    /* A run that starts in the first column still takes its neighbours. */
+    uint8_t want[8] = {1, 1};
+    uint8_t shown[8] = {0};
+    uint16_t span_page = 0;
+    uint16_t span_x = 0;
+    struct d72x40_span span;
+    CHECK(d72x40_next_span(want, shown, 8, 1, 1, &span_page, &span_x, &span));
+    CHECK(span.x0 == 0 && span.x1 == 1);
+}
+
+/* Centred as d72x40_text_centred() places n glyphs. */
+static int centred_x(const struct d72x40_canvas *cv, const char *s) {
+    return ((int)cv->width - d72x40_text_width(strlen(s), D72X40_CELL)) / 2;
+}
+
+/*
+ * What the extended mutation pass (deleted statements, swapped arithmetic,
+ * 0 <-> 1) found no test looking at.
+ */
+static void test_exact_content(void) {
+    /* The LED splash says what it shows: the number, the name, the level and
+     * the rate, each where it belongs, on a canvas cleared first. */
+    struct frame f;
+    frame_init(&f, 72, 5);
+    memset(f.buf, 0xff, sizeof(f.buf));
+    d72x40_render_led_splash(&f.cv, 5, 60, 150);
+    CHECK(page_is(&f.cv, 0, centred_x(&f.cv, "LED"), "LED", 0, NULL));
+    CHECK(page_is(&f.cv, 1, 0, "P5", 0, NULL));
+    CHECK(page_is(&f.cv, 2, 0, "TRIPLE", 0, NULL));
+    CHECK(page_is(&f.cv, 3, 0, "B60%", 0, NULL));
+    CHECK(page_is(&f.cv, 4, 0, "S150%", 0, NULL));
+    frame_init(&f, 40, 9);
+    memset(f.buf, 0xff, sizeof(f.buf));
+    d72x40_render_led_splash(&f.cv, 5, 60, 150);
+    CHECK(pixel(&f.cv, 0, 0) && pixel(&f.cv, 39, 12));
+    CHECK(row_blank(&f.cv, 13) && row_blank(&f.cv, 15));
+    CHECK(row_text_is(&f.cv, 16, 14, "P5"));
+    CHECK(row_text_is(&f.cv, 27, 4, "TRIPLE"));
+    CHECK(row_blank(&f.cv, 37));
+    CHECK(row_text_is(&f.cv, 40, 8, "B60%"));
+    CHECK(row_blank(&f.cv, 50));
+    CHECK(row_text_is(&f.cv, 56, 7, "S150%"));
+    CHECK(row_blank(&f.cv, 66));
+
+    /* Double height: every font row becomes two rows, one row down; double
+     * width repeats each column. */
+    const uint8_t *a = d72x40_glyph('A');
+    for (int wide = 0; wide <= 1; wide++) {
+        int scale = wide ? 2 : 1;
+        frame_init(&f, 72, 2);
+        d72x40_text_tall(&f.cv, 3, 0, "A", 1, wide);
+        for (int x = 0; x < 72; x++) {
+            int col = (x - 3) / scale;
+            uint16_t tall = x >= 3 && x < 3 + D72X40_FONT_WIDTH * scale
+                                ? d72x40_tall_column(a[col]) : 0;
+            CHECK(f.buf[x] == (uint8_t)(tall & 0xff));
+            CHECK(f.buf[72 + x] == (uint8_t)(tall >> 8));
+        }
+    }
+
+    /* A line whose top is one row below a page boundary spills one row into
+     * the next page. */
+    frame_init(&f, 72, 2);
+    d72x40_text_row(&f.cv, 0, 1, "A", 1);
+    for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
+        uint16_t shifted = (uint16_t)(a[col] << 1);
+        CHECK(f.buf[col] == (uint8_t)(shifted & 0xff));
+        CHECK(f.buf[72 + col] == (uint8_t)(shifted >> 8));
+    }
+
+    /* A hyphen in first place is still a place to break. */
+    CHECK(d72x40_wrap_at("-ABCDEFGHIJKL", 13, 12) == 1);
+
+    /* The battery text starts from nothing, whatever the caller left in it. */
+    struct d72x40_battery_text bt;
+    struct d72x40_status none = {.battery = D72X40_BATTERY_HIDDEN,
+                                 .peer_battery = D72X40_BATTERY_HIDDEN};
+    memset(&bt, 0x55, sizeof(bt));
+    frame_init(&f, 72, 5);
+    d72x40_battery_text(&f.cv, &none, &bt);
+    CHECK(bt.left[0] == '\0' && bt.right[0] == '\0' && !bt.stacked && bt.empty);
+
+    /* The bolt counts toward the fit: at 6n - 1 columns exactly. */
+    struct d72x40_status charging = {.battery = 87, .peer_battery = D72X40_BATTERY_HIDDEN,
+                                     .charging = true};
+    frame_init(&f, 47, 5);
+    d72x40_battery_text(&f.cv, &charging, &bt);
+    CHECK(strcmp(bt.left, "BAT 87%" D72X40_SYM_BOLT) == 0);
+    frame_init(&f, 41, 5);
+    d72x40_battery_text(&f.cv, &charging, &bt);
+    CHECK(strcmp(bt.left, "B 87%" D72X40_SYM_BOLT) == 0);
+    charging.peer_battery = 42;
+    frame_init(&f, 71, 5);
+    d72x40_battery_text(&f.cv, &charging, &bt);
+    CHECK(strcmp(bt.left, "L 87%" D72X40_SYM_BOLT) == 0 && strcmp(bt.right, "R 42%") == 0 &&
+          !bt.stacked);
+    frame_init(&f, 65, 5);
+    d72x40_battery_text(&f.cv, &charging, &bt);
+    CHECK(strcmp(bt.left, "L87%" D72X40_SYM_BOLT) == 0 && strcmp(bt.right, "R 42%") == 0);
+
+    /* How many pages each arrangement takes, and where drawing goes on. */
+    struct d72x40_status split = {.battery = 87, .peer_battery = 42};
+    struct d72x40_status unibody = {.battery = 87, .peer_battery = D72X40_BATTERY_HIDDEN};
+    frame_init(&f, 72, 5);
+    CHECK(d72x40_battery_pages(&f.cv, &split) == 1);
+    CHECK(d72x40_render_battery(&f.cv, 1, &unibody) == 2);
+    frame_init(&f, 29, 5);
+    CHECK(d72x40_battery_pages(&f.cv, &split) == 2);
+    CHECK(d72x40_render_battery(&f.cv, 1, &split) == 3);
+
+    /* A blank line between blocks only when three pages are to spare: seven
+     * pages for five lines leaves two, so the lines stay packed. */
+    struct d72x40_status packed = {.layer = "BASE", .transport = D72X40_TRANSPORT_USB,
+                                   .link = D72X40_LINK_UP, .battery = 87,
+                                   .peer_battery = D72X40_BATTERY_HIDDEN};
+    frame_init(&f, 72, 7);
+    d72x40_render(&f.cv, &packed);
+    CHECK(page_is(&f.cv, 2, 0, "USB", 0, NULL));
+    CHECK(page_is(&f.cv, 3, 0, "BAT 87%", 0, NULL));
+    frame_init(&f, 72, 8);
+    d72x40_render(&f.cv, &packed);
+    CHECK(page_is(&f.cv, 3, 0, "USB", 0, NULL));
+    CHECK(page_is(&f.cv, 5, 0, "BAT 87%", 0, NULL));
+
+    /* Half a turn puts the top-left pixel at the bottom right. */
+    frame_init(&f, 16, 2);
+    d72x40_plot(&f.cv, 0, 0, 0x01);
+    uint8_t turned[16 * 2];
+    d72x40_project(&f.cv, turned, 16, 2, 180);
+    for (size_t i = 0; i < sizeof(turned); i++) {
+        CHECK(turned[i] == (i == 16 + 15 ? 0x80 : 0));
+    }
+}
+
 int main(void) {
     test_font();
     test_text_width();
@@ -785,6 +1560,12 @@ int main(void) {
     test_layer_on_other_panels();
     test_portrait_layout();
     test_portrait_studio_lock();
+    test_portrait_boundaries();
+    test_approved_portrait_frames();
+    test_direct_primitives();
+    test_bitmap_edges();
+    test_projection_coordinates();
+    test_status_font_boundaries();
     test_rotation();
     test_output_line();
     test_battery_line();
@@ -794,6 +1575,8 @@ int main(void) {
     test_redraw_costs();
     test_led_splash();
     test_small_canvas_and_offscreen_guards();
+    test_exact_limits();
+    test_exact_content();
 
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);

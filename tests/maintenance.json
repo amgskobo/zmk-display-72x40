@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "owner": "zmk-display-72x40",
+  "supported_cores": [
+    "stock-zmk",
+    "dya"
+  ],
+  "unsupported_core_status": "NOT APPLICABLE",
+  "commands": [
+    "bash tests/run-docker.sh",
+    "ZMK_TEST_MODE=full bash tests/run-docker.sh",
+    "python3 -m unittest discover -v -s tests -p 'test_*.py'",
+    "ZMK_TEST_OFFLINE_WORKSPACE=/absolute/resolved/workspace ZMK_TEST_OUTPUT=/absolute/new/output bash tests/integration/run.sh upstream|dya",
+    "python3 -m unittest discover -v -s tests/integration -p test_registration.py"
+  ],
+  "coverage_map": "tests/contract.json",
+  "preserved_assertions": "Relocated fixtures retain their prior assertions; no snapshot auto-accept or unique assertion removal.",
+  "execution": {
+    "quick": "All host behavioral scenarios once; sanitizers on C fixtures; validator/process units once.",
+    "full": "Same host scenarios under optimized, sanitizer and measured coverage builds; kernel and supported stock/DYA interfaces use the separate integration entry.",
+    "outputs": "Use a fresh evidence directory; existing evidence is never overwritten. Optional online wrapper ZMK_TEST_OUTPUT mounts retained output; offline output stays mandatory and performs no update.",
+    "coverage": "Every selected gated function range requires executable gcov lines; empty/unrelated/missing ranges fail closed. Synthetic recording-tool regressions validate admission, not firmware behavior.",
+    "integration": "Unchanged stock and DYA owner matrices retain firmware/peripheral/native runtime/blank/external-port configurations and all assertions; each native executable runs three times without rebuilding."
+  },
+  "gaps": [
+    "Host extracted functions and controlled registry/kernel/tool stand-ins are not real scheduling or storage evidence.",
+    "Physical panel/I2C/shared-bus deadlines, USB/BLE/split delivery, reset persistence and power/current require matching production-board evidence.",
+    "Hosted moving-core CI and artifact upload require an observed hosted run, separate from locally audited offline pins.",
+    "DYA online retrieval of a private LED dependency requires a separately provisioned repository read-only deploy key; optional wrapper support grants no access."
+  ]
+}

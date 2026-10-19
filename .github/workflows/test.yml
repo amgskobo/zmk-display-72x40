@@ -20,14 +20,26 @@ concurrency:
   group: test-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
+env:
+  ZMK_TEST_MODE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'full' || 'quick' }}
+
 jobs:
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - name: Build and run the drawing-core tests
-        run: bash ./tests/run.sh
+      - name: Build and run the drawing-core tests and the driver coverage gates
+        run: |
+          set -o pipefail
+          mkdir -p ci-results
+          bash ./tests/run.sh 2>&1 | tee ci-results/host.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: display-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-results
+          if-no-files-found: error
 
   firmware:
     runs-on: ubuntu-latest
@@ -38,5 +50,33 @@ jobs:
         variant: [upstream, dya]
     steps:
       - uses: actions/checkout@v5
+      - name: Prepare read-only access to the private LED dependency
+        if: matrix.variant == 'dya'
+        env:
+          LED_READ_KEY: ${{ secrets.LED_DEPENDENCY_READ_KEY }}
+        run: |
+          mkdir -p ci-results
+          if [ -z "$LED_READ_KEY" ]; then
+            echo "DYA dependency access is blocked: LED_DEPENDENCY_READ_KEY is unavailable. Fork PRs receive no repository secret." \
+              | tee ci-results/dependency-access.txt
+            exit 2
+          fi
+          umask 077
+          printf '%s\n' "$LED_READ_KEY" >"$RUNNER_TEMP/display-led-read-key"
+          printf 'ZMK_TEST_LED_DEPLOY_KEY=%s\n' "$RUNNER_TEMP/display-led-read-key" >>"$GITHUB_ENV"
       - name: Build and run the ${{ matrix.variant }} ZMK fixtures
-        run: bash ./tests/run-integration-docker.sh ${{ matrix.variant }}
+        run: |
+          set -o pipefail
+          mkdir -p ci-results
+          ZMK_TEST_OUTPUT="$PWD/ci-results/${{ matrix.variant }}" \
+            bash ./tests/run-integration-docker.sh ${{ matrix.variant }} \
+            2>&1 | tee ci-results/${{ matrix.variant }}.log
+      - name: Remove temporary dependency key
+        if: always() && matrix.variant == 'dya'
+        run: rm -f -- "$RUNNER_TEMP/display-led-read-key"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: display-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-results
+          if-no-files-found: error

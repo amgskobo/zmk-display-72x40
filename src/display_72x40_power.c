@@ -22,7 +22,7 @@
 
 #include <zmk-display-72x40/power_state.h>
 
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_REGISTER(zmk_display_72x40_display_72x40_power, CONFIG_ZMK_DISPLAY_72X40_LOG_LEVEL);
 
 ZMK_EVENT_IMPL(zmk_display_72x40_power_state_changed);
 

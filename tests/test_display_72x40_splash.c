@@ -13,6 +13,7 @@ int main(void) {
     assert(d72x40_splash_remaining_ms(1899U, 100U, 1800U) == 1U);
     assert(d72x40_splash_remaining_ms(1900U, 100U, 1800U) == 0U);
     assert(d72x40_splash_remaining_ms(101U, 100U, 0U) == 0U);
+    assert(d72x40_splash_remaining_ms(100U, 100U, 1U) == 1U); /* the shortest splash */
     assert(d72x40_splash_remaining_ms(1000U, 100U, 500U) == 0U);
     assert(d72x40_splash_remaining_ms(1000U, 100U, 1800U) == 900U);
     assert(d72x40_splash_remaining_ms(3U, UINT32_MAX - 2U, 10U) == 4U);
