@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
- * Fixed AKKB physical frame checksums captured from 9207005 before the
+ * Fixed 72x40 physical frame checksums captured from 9207005 before the
  * orientation removal: 24 approved states, each ordinary/high-profile,
  * then LED IDs 0..18 with brightness255/speed65535. Independent approved
  * frames are also checked pixel by pixel by the core fixture.

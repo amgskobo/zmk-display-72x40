@@ -105,6 +105,24 @@ class IntegrationEvidenceLifecycle(unittest.TestCase):
             self.assertEqual(list(dependencies.iterdir()), [])
 
 
+    def test_public_dya_wrapper_needs_no_credentials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work = Path(folder)
+            tools, log, _dependencies, env = self.tool_environment(work)
+            docker = tools / 'docker'
+            docker.write_text(
+                '#!/usr/bin/env python3\nimport json,os,sys\n'
+                'with open(os.environ["RECORDING_TOOL_LOG"],"a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n',
+                encoding='utf-8')
+            docker.chmod(0o755)
+            result = self.run_entry('tests/run-integration-docker.sh', env, 'dya')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            args = json.loads(log.read_text().splitlines()[0])
+            self.assertEqual(args[-1], 'dya')
+            self.assertFalse(any('/run/credentials/' in arg or
+                                 arg.startswith(('GIT_SSH_COMMAND=', 'GIT_CONFIG_'))
+                                 for arg in args), args)
+
     def test_private_key_mounts_are_repository_scoped_and_read_only(self):
         with tempfile.TemporaryDirectory() as folder:
             work = Path(folder)

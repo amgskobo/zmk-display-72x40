@@ -1,7 +1,7 @@
 /* Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
  *
- * display_72x40.c with every option on: a panel turned 90 degrees, a reset
+ * display_72x40.c with every option on: the fixed 72x40 panel, a reset
  * pin, a contrast, a sync input device, hidden layer 2, BLE, USB, battery
  * reporting, the peripheral's battery and power, HID indicators, Studio
  * locking and the LED splash.
@@ -194,6 +194,17 @@ static void test_boot(void) {
     d72x40_failures = 3;
     run(&d72x40_work);
     assert(panel_writes == writes && d72x40_failures == 0);
+    const unsigned draws = render_calls;
+    for (unsigned repeat = 0; repeat < 100; repeat++) {
+        zmk_display_72x40_status_changed(); settle();
+    }
+    assert(render_calls == draws && panel_writes == writes);
+    /* Unknown panel pages need transmission even when all bytes match. */
+    d72x40_valid &= ~BIT(4);
+    assert(d72x40_frame_differs());
+    settle();
+    d72x40_schedule_now(); settle();
+    assert(panel_matches() && d72x40_valid == 0x1f);
     d72x40_shown[0] ^= 1;
     assert(d72x40_frame_differs());
     d72x40_shown[0] ^= 1;
@@ -202,7 +213,7 @@ static void test_boot(void) {
     /* A refresh sends the whole frame again. */
     assert(zmk_display_72x40_refresh() == 0);
     settle();
-    assert(panel_writes == writes + D72X40_PAGES && panel_matches());
+    assert(panel_writes == writes + 1 + D72X40_PAGES && panel_matches());
     /* ...drawn from the state as it is now, even a change nobody announced. */
     uint8_t before[sizeof(d72x40_want)];
     memcpy(before, d72x40_want, sizeof(before));
@@ -676,7 +687,50 @@ static void peer_report(bool sync) {
     d72x40_peer_input_cb(&evt, NULL);
 }
 
+static void test_peer_clock_boundaries(void) {
+    const uint32_t saved_now = now_ms;
+    const atomic_val_t saved_flags = atomic_get(&d72x40_flags);
+    const atomic_val_t saved_last = atomic_get(&d72x40_peer_last_ms);
+    const struct k_work_delayable saved_work = d72x40_work;
+    const uint32_t saved_valid = d72x40_valid;
+
+    atomic_clear_bit(&d72x40_flags, D72X40_PEER_SEEN);
+    atomic_set(&d72x40_peer_last_ms, 0);
+    now_ms = 0;
+    assert(!d72x40_peer_busy());
+    peer_report(false);
+    assert(!d72x40_peer_busy());
+    peer_report(true);
+    assert(d72x40_peer_busy() && "a sync report at timestamp zero must be recent");
+
+    const int before = panel_writes;
+    atomic_set_bit(&d72x40_flags, D72X40_FULL);
+    run(&d72x40_work);
+    assert(panel_writes == before && atomic_test_bit(&d72x40_flags, D72X40_WAIT_PEER));
+    now_ms = CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS - 1;
+    assert(d72x40_peer_busy());
+    now_ms++;
+    assert(!d72x40_peer_busy());
+
+    now_ms = UINT32_MAX;
+    peer_report(true);
+    now_ms = 0;
+    assert(d72x40_peer_busy());
+    peer_report(true); /* A fresh report exactly at the wrap also has timestamp0. */
+    assert(d72x40_peer_busy());
+    now_ms = CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS;
+    assert(!d72x40_peer_busy());
+
+    now_ms = saved_now;
+    atomic_set(&d72x40_flags, saved_flags);
+    atomic_set(&d72x40_peer_last_ms, saved_last);
+    d72x40_work = saved_work;
+    d72x40_valid = saved_valid;
+    puts("PASS: sync timestamps0/max/0 retain ordered window and bus admission");
+}
+
 static void test_sync_device(void) {
+    test_peer_clock_boundaries();
     /* While the touch device reports, each bus operation waits for the end
      * of a report and goes out right after it, one per report. */
     assert(!d72x40_peer_busy()); /* never reported */
@@ -879,7 +933,9 @@ static void test_power_off(void) {
 int main(int argc, char **argv) {
     if (argc == 2) {
         test_boot();
-        if (strcmp(argv[1], "quiet-setters") == 0) {
+        if (strcmp(argv[1], "peer-zero") == 0) {
+            test_peer_clock_boundaries();
+        } else if (strcmp(argv[1], "quiet-setters") == 0) {
             test_quiet_setter_ordering();
         } else if (strcmp(argv[1], "splash-wrap") == 0) {
             test_splash_wrap();

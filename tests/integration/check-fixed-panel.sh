@@ -22,7 +22,7 @@ for contract in stale-rotation wrong-panel; do
     fi
     case "$contract" in
         stale-rotation) diagnostic='rotation was removed|rotation.*not declared' ;;
-        wrong-panel) diagnostic='requires the fixed AKKB 72x40 panel' ;;
+        wrong-panel) diagnostic='requires the fixed 72x40 panel' ;;
     esac
     if ! grep -Eq "$diagnostic" "$build_root/$contract.log"; then
         cat "$build_root/$contract.log"

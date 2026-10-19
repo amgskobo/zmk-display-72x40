@@ -6,7 +6,7 @@
  *
  * Nothing here redraws on a clock. An event that changes something the panel
  * shows marks the frame stale and schedules one pass on ZMK's low-priority
- * work queue. That pass reads the state, draws the whole frame into RAM
+ * work queue. That pass reads the state, draws a changed state into RAM
  * (360 bytes on a 72x40 panel), and sends only the columns that differ from
  * what the panel already shows. Events that change nothing shown - layers
  * listed in hidden-layers, for one - cost a bit test.
@@ -94,9 +94,9 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 1,
 #define D72X40_PAGES (D72X40_HEIGHT / D72X40_PAGE_HEIGHT)
 
 BUILD_ASSERT(D72X40_WIDTH == D72X40_PANEL_WIDTH && D72X40_HEIGHT == D72X40_PANEL_HEIGHT,
-             "zmk,display-72x40 requires the fixed AKKB 72x40 panel");
+             "zmk,display-72x40 requires the fixed 72x40 panel");
 BUILD_ASSERT(!DT_NODE_HAS_PROP(D72X40_NODE, rotation),
-             "rotation was removed: AKKB uses a fixed portrait layout");
+             "rotation was removed: the panel uses a fixed portrait layout");
 
 BUILD_ASSERT(CONFIG_ZMK_DISPLAY_72X40_INIT_PRIORITY > CONFIG_DISPLAY_INIT_PRIORITY,
              "the panel clear must run after the display driver has initialised");
@@ -172,6 +172,7 @@ static uint8_t d72x40_shown[D72X40_PAGES * D72X40_WIDTH];
 static uint32_t d72x40_valid;
 static bool d72x40_panel_on;
 static uint8_t d72x40_failures;
+static struct d72x40_render_cache d72x40_render_state;
 
 static const struct d72x40_canvas d72x40_canvas = {.buf = d72x40_want};
 
@@ -193,6 +194,8 @@ enum {
     D72X40_WAIT_PEER,
     /* That report has come. */
     D72X40_PEER_KICK,
+    /* A report was received; timestamp0 is valid at boot and uptime wrap. */
+    D72X40_PEER_SEEN,
 };
 
 /* The panel starts lit, and its timeout counts from boot. */
@@ -445,6 +448,7 @@ static void d72x40_peer_input_cb(struct input_event *evt, void *user_data) {
         return;
     }
     atomic_set(&d72x40_peer_last_ms, (atomic_val_t)k_uptime_get_32());
+    atomic_set_bit(&d72x40_flags, D72X40_PEER_SEEN);
     /* The device's read is over and its next sample is a report period
      * away: the one moment a write cannot run into it. */
     if (atomic_test_bit(&d72x40_flags, D72X40_WAIT_PEER)) {
@@ -457,10 +461,12 @@ COND_CODE_1(DT_NODE_HAS_STATUS_OKAY(D72X40_PEER_NODE),
             (INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(D72X40_PEER_NODE), d72x40_peer_input_cb, NULL);), ())
 
 static bool d72x40_peer_busy(void) {
+    if (!atomic_test_bit(&d72x40_flags, D72X40_PEER_SEEN)) {
+        return false;
+    }
     uint32_t last = (uint32_t)atomic_get(&d72x40_peer_last_ms);
 
-    return last != 0 &&
-           (uint32_t)(k_uptime_get_32() - last) < CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS;
+    return (uint32_t)(k_uptime_get_32() - last) < CONFIG_ZMK_DISPLAY_72X40_SYNC_WINDOW_MS;
 }
 
 #else
@@ -676,11 +682,9 @@ static void d72x40_collect(struct d72x40_status *st) {
 }
 
 static bool d72x40_frame_differs(void) {
-    struct d72x40_span span;
-    uint16_t page = 0;
-    uint16_t x = 0;
-
-    return d72x40_next_span(d72x40_want, d72x40_shown, D72X40_WIDTH, D72X40_PAGES, d72x40_valid, &page, &x, &span);
+    const uint32_t all_pages = BIT(D72X40_PAGES) - 1;
+    return (d72x40_valid & all_pages) != all_pages ||
+           memcmp(d72x40_want, d72x40_shown, sizeof(d72x40_want)) != 0;
 }
 
 /* What one pass sent, for the debug log. */
@@ -792,15 +796,15 @@ static void d72x40_work_handler(struct k_work *work) {
         const uint32_t settings = (uint32_t)atomic_get(&d72x40_led_settings);
         k_spin_unlock(&d72x40_splash_lock, splash_key);
         if (show_splash) {
-            d72x40_render_led_splash(&d72x40_canvas, (uint8_t)settings,
+            d72x40_render_led_cached(&d72x40_canvas, &d72x40_render_state, (uint8_t)settings,
                                     (uint8_t)(settings >> 8), (uint16_t)(settings >> 16));
         } else
 #endif
         {
-        struct d72x40_status st;
+            struct d72x40_status st;
 
-        d72x40_collect(&st);
-        d72x40_render(&d72x40_canvas, &st);
+            d72x40_collect(&st);
+            d72x40_render_cached(&d72x40_canvas, &d72x40_render_state, &st);
         }
     }
 
@@ -1017,6 +1021,7 @@ static int d72x40_panel_init(void) {
 
     unsigned int cleared = 0;
 
+    memset(&d72x40_render_state, 0, sizeof(d72x40_render_state));
     memset(d72x40_shown, 0, sizeof(d72x40_shown));
     d72x40_valid = 0;
     for (uint16_t page = 0; page < D72X40_PAGES; page++) {

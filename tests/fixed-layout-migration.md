@@ -1,6 +1,6 @@
-# Fixed AKKB layout migration
+# Fixed panel layout migration
 
-The user selected AKKB-only support and removed configurable orientation.
+The user selected support for one fixed 72x40 panel and removed configurable orientation.
 The panel is 72x40; drawing is 40x72 and writes directly to its page layout.
 This intentionally removes generic landscape/other-size/alternate-orientation
 contracts. Those configurations are NOT APPLICABLE, never passing substitutes.
@@ -10,7 +10,7 @@ No approved pixel frame or scheduling snapshot was updated.
 
 | Former assertion family | Current disposition |
 | --- | --- |
-| test_font, bitmap_edges, direct_primitives | test_text_and_font and test_bitmap_edges independently check fixed controller pixels for all byte codes, clipped/erased strips, zero/partial/page crossings and extreme bounds |
+| test_font, bitmap_edges, direct_primitives | test_status_font_and_locks, test_direct_symbols_and_numbers and test_bitmap_edges independently check fixed controller pixels, all byte codes in the current font, clipped/erased strips, zero/partial/page crossings and extreme bounds |
 | portrait layout, service locks and approved frames | test_approved_frames retains all 24 approved pixel frames unchanged; test_status_font_and_locks checks every clipped lock edge; test_state_and_bounds pins missing features and independent state |
 | high Profile 255, peer charging and19 LED variants in separate native/reference fixtures | 67 original physical-frame checksums in fixed_frame_hashes.h, in the same optimized/sanitized/coverage core binary |
 | font width/next-x saturation and invalid coordinates | Fixed status font width and internal advance retain bounded/empty/fallback checks. Unused generic text_n/tall/width APIs are removed; negative/extreme drawing coordinates remain checked |
@@ -24,3 +24,21 @@ No approved pixel frame or scheduling snapshot was updated.
 Coverage remains 100% for measured core lines/branches and all seven selected
 runtime families. This percentage supplements the explicit cases; it does not
 prove physical I2C deadlines, device CPU/current, USB/BLE/split or OLED behavior.
+
+## Native symbol and lock simplification
+
+Before retiring the unused private 5x7 ASCII/column path, source and assertions
+were saved outside this owner under the review's retired-source directory with
+SHA-256 identities. No approved frame, ordered span assertion or route matrix
+was removed or updated. Historical unresolved simulator failures remain open.
+
+| Removed private path/assertions | Retained current contract |
+| --- | --- |
+| Old 5x7 ASCII table, glyph lookup and text_row; printable/nonblank/fallback and all256 byte-code checks | Normal text uses the existing Panel Status 10 table; test_status_font_and_locks retains all256 code mappings, every printable nonblank except space, clipping, erase and fallback. Old 5x7 text is intentionally unsupported; no production caller remains. |
+| Old dedicated control-code glyph identities | test_direct_symbols_and_numbers pins all seven original symbols against independent logical column data, every visible/clipped location and invalid codes; code zero remains blank. |
+| Column mask/plot, invalid pages, draw/erase and offscreen bounds | test_bitmap_edges retains independent physical pixels and guard bytes for draw/erase, page crossings, clipped and extreme coordinates; direct symbol and lock sweeps retain each relevant bit/page edge. |
+| Per-row lock bit reversal/geometry and private native_lock_row guard/zero-mask probes | test_status_font_and_locks retains the original independent closed/opened logical pixels across every clipped x and row, including empty/clipped masks; explicit INT_MIN/INT_MAX guards remain. Generic arbitrary nine-bit row API is retired. |
+| Width/position saturation assertions inside removed text fixture | test_status_font_and_locks retains INT_MAX, exact INT_MAX-6 and representable INT_MIN+6 cases. |
+
+Cache assertions and the explicit bypass negative control supplement these
+preserved display contracts; they are not substitutes for physical acceptance.

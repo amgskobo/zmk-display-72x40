@@ -1,6 +1,6 @@
 /* Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
- * Fixed AKKB panel: independent pixel expectations and pre-refactor frames.
+ * Fixed 72x40 panel: independent pixel expectations and pre-refactor frames.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -86,44 +86,16 @@ static void test_bitmap_edges(void) {
         CHECK(hash_frame(f.buf)==hash_frame((uint8_t[360]){0})); guarded(&f);
     }
 }
-static void test_text_and_font(void) {
-    struct frame f; uint8_t expected[360];
-    const int xs[]={INT_MIN,-9,-5,-1,0,1,35,39,40,INT_MAX};
-    const int ys[]={INT_MIN,-1,0,1,7,8,65,71,72,INT_MAX};
-    for(unsigned code=0;code<=255;code++) {
-        const uint8_t *glyph=d72x40_glyph((unsigned char)code);
-        for(int col=0;col<5;col++) CHECK((glyph[col]&0x80)==0);
-        if (code >= D72X40_FONT_ASCII_FIRST && code <= D72X40_FONT_ASCII_LAST) {
-            unsigned any = 0;
-            for (int col = 0; col < D72X40_FONT_WIDTH; col++) any |= glyph[col];
-            CHECK(code == ' ' ? any == 0 : any != 0);
-        }
-        if(code==0) continue;
-        for(size_t a=0;a<10;a++) for(size_t b=0;b<10;b++) {
-            frame_init(&f); memset(expected,0,360); char text[2]={(char)code,0};
-            d72x40_text_row(&f.cv,xs[a],ys[b],text,1);
-            if(ys[b]>=0 && ys[b]<72 && xs[a]>-8 && xs[a]<40) for(int col=0;col<5;col++) for(int row=0;row<7;row++)
-                ink(expected,xs[a]+col,ys[b]+row,((glyph[col]>>row)&1u)!=0,false);
-            CHECK(memcmp(expected,f.buf,360)==0); guarded(&f);
-        }
-    }
-    CHECK(d72x40_glyph(0xff)==d72x40_glyph('?'));
-    CHECK(d72x40_glyph(0x80)==d72x40_glyph('?'));
-    CHECK(d72x40_glyph(0x01)!=d72x40_glyph('?'));
-    CHECK(d72x40_glyph(D72X40_FONT_ASCII_LAST) ==
-          d72x40_font_ascii[D72X40_FONT_ASCII_LAST-D72X40_FONT_ASCII_FIRST]);
-    CHECK(d72x40_glyph(0x1f)==d72x40_glyph('?'));
-    frame_init(&f); d72x40_text_row(&f.cv,0,0,"",1); d72x40_text_row(&f.cv,0,0,"A",0); CHECK(hash_frame(f.buf)==hash_frame((uint8_t[360]){0}));
-    d72x40_text_row(&f.cv,39,0,"AA",2); guarded(&f);
-    CHECK(d72x40_text_advance(INT_MAX,6)==INT_MAX);
-    CHECK(d72x40_text_advance(INT_MAX-6,6)==INT_MAX);
-    CHECK(d72x40_text_advance(INT_MIN,6)==INT_MIN+6);
-}
 static void test_status_font_and_locks(void) {
     struct frame f; uint8_t expected[360];
     for(unsigned code=0;code<=255;code++) {
         unsigned index=code>=32 && code<=126?code-32:(unsigned)'?'-32;
         CHECK(d72x40_status_glyph((unsigned char)code)==d72x40_status_rows[index]);
+        if (code >= 32 && code <= 126) {
+            unsigned any = 0;
+            for (unsigned row = 0; row < 10; row++) any |= d72x40_status_rows[index][row];
+            CHECK(code == ' ' ? any == 0 : any != 0);
+        }
         if(code==0) continue;
         for(int x=-9;x<=40;x+=7) for(int y=-1;y<=72;y++) for(int erase=0;erase<=1;erase++) {
             frame_init(&f); memset(f.buf,erase?0xff:0,360); memcpy(expected,f.buf,360); char text[2]={(char)code,0};
@@ -141,8 +113,12 @@ static void test_status_font_and_locks(void) {
             ink(expected,x+col,y+row,(((open?opened:closed)[row]>>col)&1u)!=0,false);
         CHECK(memcmp(expected,f.buf,360)==0); guarded(&f);
     }
-    frame_init(&f); d72x40_native_lock_row(&f.cv,0,0,0); d72x40_native_lock_row(&f.cv,40,0,1); d72x40_native_lock_row(&f.cv,-9,0,1); d72x40_native_lock_row(&f.cv,0,INT_MIN,0xffff);
+    frame_init(&f); d72x40_status_lock(&f.cv,0,INT_MIN,false);
+    d72x40_status_lock(&f.cv,0,INT_MAX,true);
     d72x40_status_lock(&f.cv,INT_MIN,0,false); d72x40_status_lock(&f.cv,INT_MAX,0,false); guarded(&f);
+    CHECK(d72x40_text_advance(INT_MAX,6)==INT_MAX);
+    CHECK(d72x40_text_advance(INT_MAX-6,6)==INT_MAX);
+    CHECK(d72x40_text_advance(INT_MIN,6)==INT_MIN+6);
     CHECK(d72x40_status_width("",SIZE_MAX)==0); CHECK(d72x40_status_width("AB",0)==0);
     CHECK(d72x40_status_width("AB",1)==d72x40_status_advance['A'-32]);
     d72x40_status_text(&f.cv,40,0,"A",1,false); d72x40_status_text(&f.cv,0,0,"A",0,false);
@@ -206,8 +182,6 @@ static void test_state_and_bounds(void) {
     char num[8]=""; d72x40_append_u8(num,sizeof(num),0); CHECK(strcmp(num,"0")==0);
     num[0]=0; d72x40_append_u16(num,sizeof(num),0); CHECK(strcmp(num,"0")==0);
     num[0]=0; d72x40_append_u16(num,sizeof(num),65535); CHECK(strcmp(num,"65535")==0);
-    d72x40_mask(&a.cv,0,0,0xa5,true); d72x40_plot(&a.cv,-1,0,0xff); d72x40_plot(&a.cv,40,0,0xff);
-    d72x40_plot(&a.cv,0,-1,0xff); d72x40_plot(&a.cv,0,9,0xff); guarded(&a);
     d72x40_render_led_splash(&a.cv,255,0,0); guarded(&a);
 }
 struct span_list {
@@ -315,9 +289,172 @@ static void test_redraw_costs(void) {
     for(size_t p=0;p<5;p++) CHECK(memcmp(before.buf+p*72+13,shown.buf+p*72+13,59)==0);
     CHECK(memcmp(want.buf,shown.buf,360)==0);
 }
+static void test_cached_rendering(void) {
+    struct frame a, b, reference;
+    frame_init(&a); frame_init(&b); frame_init(&reference);
+    struct d72x40_render_cache ca = {0}, cb = {0};
+    struct d72x40_status st = approved_status(&d72x40_approved_frames[0]);
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st));
+    CHECK(!d72x40_render_cached(&a.cv, &ca, &st));
+    CHECK(d72x40_render_cached(&b.cv, &cb, &st));
+    CHECK(memcmp(a.buf, b.buf, 360) == 0);
+    /* Every status field must invalidate, even fields conservatively retained. */
+#define CHANGE(field, value) do { \
+    st.field = (value); \
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st)); \
+    CHECK(!d72x40_render_cached(&a.cv, &ca, &st)); \
+    d72x40_render(&reference.cv, &st); \
+    CHECK(memcmp(a.buf, reference.buf, 360) == 0); \
+} while (0)
+    CHANGE(layer[0], 'X'); CHANGE(transport, 1); CHANGE(link, 1);
+    CHANGE(profile, 255); CHANGE(battery, 0); CHANGE(peer_battery, 100);
+    CHANGE(charging, !st.charging); CHANGE(peer_charging, !st.peer_charging);
+    CHANGE(caps_lock, !st.caps_lock); CHANGE(studio_lock_available, !st.studio_lock_available);
+    CHANGE(unlocked, !st.unlocked); CHANGE(messenger_lock_available, !st.messenger_lock_available);
+    CHANGE(messenger_unlocked, !st.messenger_unlocked);
+    CHANGE(ble_available, !st.ble_available); CHANGE(usb_available, !st.usb_available);
+    CHANGE(ble_link, 255); CHANGE(usb_link, 255);
+#undef CHANGE
+    CHECK(memcmp(a.buf, b.buf, 360) != 0);
+    CHECK(!d72x40_render_cached(&b.cv, &cb, &cb.last.status));
+    for (unsigned i = 0; i < 8; i++) {
+        uint8_t pattern = i & 1u ? UINT8_MAX : 0;
+        uint8_t brightness = i & 2u ? UINT8_MAX : 0;
+        uint16_t speed = i & 4u ? UINT16_MAX : 0;
+        CHECK(d72x40_render_led_cached(&a.cv, &ca, pattern, brightness, speed));
+        CHECK(!d72x40_render_led_cached(&a.cv, &ca, pattern, brightness, speed));
+        d72x40_render_led_splash(&reference.cv, pattern, brightness, speed);
+        CHECK(memcmp(a.buf, reference.buf, 360) == 0);
+    }
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st)); /* LED expiry restores status. */
+    CHECK(!d72x40_render_cached(&a.cv, &ca, &st));
+    CHECK(d72x40_render_led_cached(&a.cv, &ca, 255, 255, 65535)); /* Same tuple, new mode. */
+    memset(&ca, 0, sizeof(ca)); memset(a.buf, 0, sizeof(a.buf));
+    CHECK(d72x40_render_led_cached(&a.cv, &ca, 255, 255, 65535));
+    CHECK(memcmp(a.buf, reference.buf, 360) == 0);
+    memset(&ca, 0, sizeof(ca));
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st));
+    guarded(&a); guarded(&b); guarded(&reference);
+}
+
+/* Independent logical-column expectations preserve every original symbol. */
+static const uint8_t symbol_columns[D72X40_FONT_SYMBOL_COUNT][D72X40_FONT_WIDTH] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00}, /* 0x00 blank */
+    {0x10, 0x20, 0x10, 0x08, 0x06}, /* 0x01 check */
+    {0x22, 0x14, 0x08, 0x14, 0x22}, /* 0x02 cross */
+    {0x1c, 0x22, 0x22, 0x22, 0x1c}, /* 0x03 open (a profile with no bond) */
+    {0x22, 0x14, 0x7f, 0x2a, 0x14}, /* 0x04 bluetooth */
+    {0x08, 0x6c, 0x3e, 0x1b, 0x08}, /* 0x05 bolt (charging) */
+    {0x7e, 0x79, 0x49, 0x79, 0x7a}, /* 0x06 unlocked padlock */
+};
+
+static void test_direct_symbols_and_numbers(void) {
+    struct frame f; uint8_t expected[360];
+    for (unsigned code = 0; code <= 255; code++) {
+        for (int x = -9; x <= 40; x++) for (int y = -1; y <= 72; y++) {
+            frame_init(&f); memset(expected, 0, sizeof(expected));
+            d72x40_symbol(&f.cv, x, y, code);
+            if (code < 7 && y >= 0 && y < 72)
+                for (int col = 0; col < 5; col++) for (int row = 0; row < 7; row++)
+                    ink(expected, x + col, y + row,
+                        ((symbol_columns[code][col] >> row) & 1u) != 0, false);
+            CHECK(memcmp(f.buf, expected, 360) == 0); guarded(&f);
+        }
+    }
+    d72x40_symbol(&f.cv, INT_MIN, INT_MAX, UINT_MAX); guarded(&f);
+    CHECK(d72x40_link_symbol(D72X40_LINK_UP) == 1);
+    CHECK(d72x40_link_symbol(D72X40_LINK_OPEN) == 0);
+    CHECK(d72x40_link_symbol(D72X40_LINK_DOWN) == 2);
+    CHECK(d72x40_link_symbol(255) == 2);
+    for (unsigned value = 0; value <= UINT16_MAX; value++) {
+        char expected_num[8];
+        (void)snprintf(expected_num, sizeof(expected_num), "%u", value);
+        for (size_t cap = 1; cap <= sizeof(expected_num); cap++) {
+            char actual[8] = "";
+            d72x40_append_u16(actual, cap, (uint16_t)value);
+            size_t length = strlen(expected_num);
+            size_t kept = length < cap - 1 ? length : cap - 1;
+            CHECK(strlen(actual) == kept && memcmp(actual, expected_num, kept) == 0);
+            if (value <= UINT8_MAX) {
+                actual[0] = 0; d72x40_append_u8(actual, cap, (uint8_t)value);
+                CHECK(strlen(actual) == kept && memcmp(actual, expected_num, kept) == 0);
+            }
+        }
+    }
+}
+
+static void test_incremental_transitions(void) {
+    struct frame actual, reference;
+    for (size_t from = 0; from < 24; from++) for (size_t to = 0; to < 24; to++) {
+        frame_init(&actual); frame_init(&reference);
+        struct d72x40_render_cache cache = {0};
+        struct d72x40_status before = approved_status(&d72x40_approved_frames[from]);
+        struct d72x40_status after = approved_status(&d72x40_approved_frames[to]);
+        CHECK(d72x40_render_cached(&actual.cv, &cache, &before));
+        (void)d72x40_render_cached(&actual.cv, &cache, &after);
+        d72x40_render(&reference.cv, &after);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0); guarded(&actual);
+    }
+    struct d72x40_status before = approved_status(&d72x40_approved_frames[0]);
+    CHECK(d72x40_status_changes(&before, &before) == 0);
+#define GROUP(field, value, expected) do { \
+    struct d72x40_status after = before; after.field = (value); \
+    CHECK(d72x40_status_changes(&before, &after) == (unsigned)(expected)); \
+} while (0)
+    GROUP(layer[0], 'X', D72X40_GROUP_HEADER);
+    GROUP(profile, 255, D72X40_GROUP_CONNECTIONS);
+    GROUP(ble_available, !before.ble_available, D72X40_GROUP_CONNECTIONS);
+    GROUP(usb_available, !before.usb_available, D72X40_GROUP_CONNECTIONS);
+    GROUP(ble_link, 255, D72X40_GROUP_CONNECTIONS);
+    GROUP(usb_link, 255, D72X40_GROUP_CONNECTIONS);
+    GROUP(caps_lock, !before.caps_lock, D72X40_GROUP_CAPS);
+    GROUP(battery, 0, D72X40_GROUP_BATTERY);
+    GROUP(charging, !before.charging, D72X40_GROUP_BATTERY);
+    GROUP(peer_battery, 100, D72X40_GROUP_PEER_BATTERY);
+    GROUP(peer_charging, !before.peer_charging, D72X40_GROUP_PEER_BATTERY);
+    GROUP(peer_battery, D72X40_BATTERY_HIDDEN, D72X40_GROUP_BATTERY | D72X40_GROUP_PEER_BATTERY);
+    GROUP(studio_lock_available, !before.studio_lock_available, D72X40_GROUP_LOCKS);
+    GROUP(unlocked, !before.unlocked, D72X40_GROUP_LOCKS);
+    GROUP(messenger_lock_available, !before.messenger_lock_available, D72X40_GROUP_LOCKS);
+    GROUP(messenger_unlocked, !before.messenger_unlocked, D72X40_GROUP_LOCKS);
+    GROUP(transport, 1, 0); GROUP(link, 1, 0);
+#undef GROUP
+    for (unsigned mask = 0; mask <= D72X40_GROUP_ALL; mask++) {
+        frame_init(&actual); frame_init(&reference);
+        struct d72x40_render_cache cache = {0};
+        struct d72x40_status after = before;
+        if (mask & D72X40_GROUP_HEADER) strcpy(after.layer, "NUM");
+        if (mask & D72X40_GROUP_CONNECTIONS) {after.profile = 255; after.ble_available = false; after.usb_available = false;}
+        if (mask & D72X40_GROUP_CAPS) after.caps_lock = !before.caps_lock;
+        if (mask & D72X40_GROUP_BATTERY) after.battery = D72X40_BATTERY_HIDDEN;
+        if (mask & D72X40_GROUP_PEER_BATTERY) after.peer_battery = D72X40_BATTERY_HIDDEN;
+        if (mask & D72X40_GROUP_LOCKS) {after.studio_lock_available = false; after.messenger_lock_available = false;}
+        (void)d72x40_render_cached(&actual.cv, &cache, &before);
+        (void)d72x40_render_cached(&actual.cv, &cache, &after);
+        d72x40_render(&reference.cv, &after);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0);
+        (void)d72x40_render_cached(&actual.cv, &cache, &before);
+        d72x40_render(&reference.cv, &before);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0); guarded(&actual);
+    }
+    for (unsigned from = 0; from < 8; from++) for (unsigned to = 0; to < 8; to++) {
+        frame_init(&actual); frame_init(&reference);
+        struct d72x40_render_cache cache = {0};
+        (void)d72x40_render_led_cached(&actual.cv, &cache, from & 1u ? 255 : 5,
+                                     from & 2u ? 255 : 60, from & 4u ? 65535 : 150);
+        uint8_t pattern = to & 1u ? 255 : 5;
+        uint8_t brightness = to & 2u ? 255 : 60;
+        uint16_t speed = to & 4u ? 65535 : 150;
+        (void)d72x40_render_led_cached(&actual.cv, &cache, pattern, brightness, speed);
+        d72x40_render_led_splash(&reference.cv, pattern, brightness, speed);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0); guarded(&actual);
+    }
+}
+
 int main(void) {
-    test_approved_frames();test_bitmap_edges();test_text_and_font();test_status_font_and_locks();
+    test_approved_frames();test_bitmap_edges();test_status_font_and_locks();
     test_normal_led_content();test_state_and_bounds();test_spans();test_redraw_costs();
+    test_cached_rendering();test_direct_symbols_and_numbers();test_incremental_transitions();
     if(failures){fprintf(stderr,"%d checks failed\n",failures);return EXIT_FAILURE;}
-    puts("display_72x40_core: all fixed AKKB checks passed");return EXIT_SUCCESS;
+    puts("display_72x40_core: all fixed-panel checks passed");return EXIT_SUCCESS;
 }

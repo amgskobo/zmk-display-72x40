@@ -58,7 +58,7 @@ Run `bash tests/run-docker.sh` for drawing/runtime coverage and
 `bash tests/run-integration-docker.sh upstream` and
 `bash tests/run-integration-docker.sh dya` for both firmware variants.
 Use focused owner driver/native or physical checks when changing I2C frame
-delivery, event timing or power transitions. AKKB46 owns its concrete OLED
+delivery, event timing or power transitions. The consuming keyboard configuration owns its concrete OLED
 address/reset wiring and complete status-page integration.
 
 Compare rendered pixels/frame hashes and also test reset, first-frame,

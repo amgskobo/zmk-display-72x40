@@ -57,6 +57,10 @@ for variant in "${variants[@]}"; do
         "$repo_root/tests/test_display_72x40_splash.c" \
         -o "$build_dir/splash-$label"
     "$build_dir/splash-$label"
+    cc "${warnings[@]}" "${flags[@]}" -I"$repo_root/include" \
+        "$repo_root/tests/test_partial_render.c" -o "$build_dir/partial-$label"
+    "$build_dir/partial-$label" status
+    "$build_dir/partial-$label" led
 done
 
 if [ "$mode" = full ]; then

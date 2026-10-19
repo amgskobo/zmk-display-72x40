@@ -22,7 +22,7 @@
 #include <zmk-display-72x40/display_72x40_font.h>
 #include <zmk-display-72x40/display_72x40_status_font.h>
 
-/* AKKB fixed panel storage and portrait drawing coordinates. */
+/* Fixed panel storage and portrait drawing coordinates. */
 #define D72X40_PANEL_WIDTH 72
 #define D72X40_PANEL_HEIGHT 40
 #define D72X40_PANEL_PAGES 5
@@ -31,21 +31,10 @@
 #define D72X40_CANVAS_HEIGHT 72
 #define D72X40_CANVAS_PAGES 9
 
-/* One text line is one page: a 7-pixel glyph over a blank row. */
+/* The controller page height. */
 #define D72X40_PAGE_HEIGHT 8
-/* A glyph and the blank column after it. */
-#define D72X40_CELL 6
-
 /* Room for a layer name as ZMK stores it; the panel shows what fits. */
 #define D72X40_LAYER_TEXT_SIZE 24
-
-/* The font's own symbols, as string literals for building lines. */
-#define D72X40_SYM_CHECK "\x01"
-#define D72X40_SYM_CROSS "\x02"
-#define D72X40_SYM_OPEN "\x03"
-#define D72X40_SYM_BLUETOOTH "\x04"
-#define D72X40_SYM_BOLT "\x05"
-#define D72X40_SYM_UNLOCKED "\x06"
 
 /* A battery value that is not drawn at all, and one drawn as "--". */
 #define D72X40_BATTERY_HIDDEN 0xff
@@ -101,7 +90,7 @@ struct d72x40_status {
     uint8_t usb_link;
 };
 
-/* A frame is always the AKKB controller's 360-byte page layout. */
+/* A frame is always the fixed controller's 360-byte page layout. */
 struct d72x40_canvas {
     uint8_t *buf;
 };
@@ -112,44 +101,8 @@ struct d72x40_span {
     uint16_t x1;
 };
 
-static inline const uint8_t *d72x40_glyph(unsigned char c) {
-    if (c < D72X40_FONT_SYMBOL_COUNT) {
-        return d72x40_font_symbols[c];
-    }
-    if (c >= D72X40_FONT_ASCII_FIRST && c <= D72X40_FONT_ASCII_LAST) {
-        return d72x40_font_ascii[c - D72X40_FONT_ASCII_FIRST];
-    }
-    return d72x40_font_ascii['?' - D72X40_FONT_ASCII_FIRST];
-}
-
 static inline void d72x40_clear(const struct d72x40_canvas *cv) {
     memset(cv->buf, 0, (size_t)D72X40_CANVAS_WIDTH * D72X40_CANVAS_PAGES);
-}
-
-static inline uint8_t d72x40_reverse_byte(uint8_t b) {
-    b = (uint8_t)(((b & 0x55u) << 1) | ((b >> 1) & 0x55u));
-    b = (uint8_t)(((b & 0x33u) << 2) | ((b >> 2) & 0x33u));
-    return (uint8_t)((b << 4) | (b >> 4));
-}
-
-/* Logical column bits go straight to fixed controller pages. */
-static inline void d72x40_mask(const struct d72x40_canvas *cv, int x, int page,
-                               uint8_t bits, bool erase) {
-    if (x < 0 || x >= D72X40_CANVAS_WIDTH || page < 0 || page >= D72X40_CANVAS_PAGES) {
-        return;
-    }
-    unsigned y = (unsigned)(D72X40_CANVAS_WIDTH - 1 - x);
-    uint8_t mask = (uint8_t)(1u << (y % 8));
-    size_t base = (size_t)(y / 8) * D72X40_CANVAS_HEIGHT + (size_t)page * 8;
-    for (unsigned bit = 0; bit < 8; bit++) {
-        uint8_t ink = (uint8_t)((0u - (((unsigned)bits >> bit) & 1u)) & mask);
-        cv->buf[base + bit] = erase ? (uint8_t)(cv->buf[base + bit] & (uint8_t)~ink)
-                                    : (uint8_t)(cv->buf[base + bit] | ink);
-    }
-}
-
-static inline void d72x40_plot(const struct d72x40_canvas *cv, int x, int page, uint8_t bits) {
-    d72x40_mask(cv, x, page, bits, false);
 }
 
 /* Clip once per strip, then advance contiguous controller addresses. */
@@ -199,32 +152,19 @@ static inline void d72x40_append(char *buf, size_t size, const char *s) {
     buf[len] = '\0';
 }
 
-static inline void d72x40_append_u8(char *buf, size_t size, uint8_t value) {
-    char digits[4] = {0};
-    size_t n = 0;
-    do {
-        digits[n++] = (char)('0' + value % 10);
-        value = (uint8_t)(value / 10);
-    } while (value != 0);
-    char text[4] = {0}; /* at most three digits: always terminated */
-    for (size_t i = 0; i < n; i++) {
-        text[i] = digits[n - 1 - i];
-    }
-    d72x40_append(buf, size, text);
-}
-
 static inline void d72x40_append_u16(char *buf, size_t size, uint16_t value) {
-    char digits[6] = {0};
-    size_t n = 0;
+    char digits[6];
+    size_t at = sizeof(digits) - 1;
+    digits[at] = '\0';
     do {
-        digits[n++] = (char)('0' + value % 10);
+        digits[--at] = (char)('0' + value % 10);
         value = (uint16_t)(value / 10);
     } while (value != 0);
-    char result[6] = {0}; /* at most five digits: always terminated */
-    for (size_t i = 0; i < n; i++) {
-        result[i] = digits[n - 1 - i];
-    }
-    d72x40_append(buf, size, result);
+    d72x40_append(buf, size, &digits[at]);
+}
+
+static inline void d72x40_append_u8(char *buf, size_t size, uint8_t value) {
+    d72x40_append_u16(buf, size, value);
 }
 
 static inline void d72x40_append_battery(char *buf, size_t size, uint8_t level) {
@@ -236,41 +176,27 @@ static inline void d72x40_append_battery(char *buf, size_t size, uint8_t level) 
     d72x40_append(buf, size, "%");
 }
 
-static inline void d72x40_text_row(const struct d72x40_canvas *cv, int x, int row, const char *s,
-                               size_t max) {
-    if (row < 0 || row >= D72X40_CANVAS_PAGES * D72X40_PAGE_HEIGHT) {
-        return;
-    }
-    int page = row / D72X40_PAGE_HEIGHT;
-    unsigned shift = (unsigned)(row % D72X40_PAGE_HEIGHT);
+enum d72x40_symbol_code {
+    D72X40_SYMBOL_BLANK = 0,
+    D72X40_SYMBOL_CHECK,
+    D72X40_SYMBOL_CROSS,
+    D72X40_SYMBOL_OPEN,
+    D72X40_SYMBOL_BLUETOOTH,
+    D72X40_SYMBOL_BOLT,
+    D72X40_SYMBOL_UNLOCKED,
+};
 
-    for (size_t i = 0; i < max && s[i] != '\0'; i++) {
-        if (x >= D72X40_CANVAS_WIDTH) {
-            return;
-        }
-        unsigned char code = (unsigned char)s[i];
-        if (code < D72X40_FONT_SYMBOL_COUNT) {
-            d72x40_native_bitmap(cv, x, row, d72x40_symbol_rows[code], D72X40_FONT_HEIGHT, false);
-            x += D72X40_CELL;
-            continue;
-        }
-        const uint8_t *g = d72x40_glyph((unsigned char)s[i]);
-
-        for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
-            uint16_t shifted = (uint16_t)((uint16_t)g[col] << shift);
-
-            d72x40_plot(cv, x + col, page, (uint8_t)(shifted & 0xff));
-            if (shift != 0) {
-                d72x40_plot(cv, x + col, page + 1, (uint8_t)(shifted >> 8));
-            }
-        }
-        x += D72X40_CELL;
+/* Status marks use native symbol rows, including the empty mark (code zero). */
+static inline void d72x40_symbol(const struct d72x40_canvas *cv, int x, int row,
+                                  unsigned code) {
+    if (code < D72X40_FONT_SYMBOL_COUNT) {
+        d72x40_native_bitmap(cv, x, row, d72x40_symbol_rows[code], D72X40_FONT_HEIGHT, false);
     }
 }
 
-static inline const char *d72x40_link_mark(uint8_t link) {
-    return link == D72X40_LINK_UP ? D72X40_SYM_CHECK
-           : link == D72X40_LINK_OPEN ? " " : D72X40_SYM_CROSS;
+static inline unsigned d72x40_link_symbol(uint8_t link) {
+    return link == D72X40_LINK_UP ? D72X40_SYMBOL_CHECK
+           : link == D72X40_LINK_OPEN ? D72X40_SYMBOL_BLANK : D72X40_SYMBOL_CROSS;
 }
 
 static inline unsigned d72x40_status_index(unsigned char c) {
@@ -320,57 +246,42 @@ static inline void d72x40_status_centred(const struct d72x40_canvas *cv, int row
     d72x40_status_text(cv, (D72X40_CANVAS_WIDTH - width) / 2, row, s, n, erase);
 }
 
-/* The nine-pixel lock uses one bounded mask across controller pages. */
-static inline void d72x40_native_lock_row(const struct d72x40_canvas *cv, int x, int row,
-                                     uint16_t bits) {
-    unsigned count = 9;
-    if (row < 0 || row >= D72X40_CANVAS_PAGES * 8 ||
-        x >= D72X40_CANVAS_WIDTH || x <= -(int)count) {
-        return;
-    }
-    if (x < 0) {
-        unsigned skip = (unsigned)-x;
-        bits = (uint16_t)(bits >> skip);
-        count -= skip;
-        x = 0;
-    }
-    unsigned available = (unsigned)D72X40_CANVAS_WIDTH - (unsigned)x;
-    if (count > available) {
-        count = available;
-    }
-    bits = (uint16_t)(bits & ((1ul << count) - 1));
-    if (bits == 0) {
-        return;
-    }
-    unsigned y = (unsigned)D72X40_CANVAS_WIDTH - (unsigned)x - count;
-    bits = (uint16_t)(((uint16_t)d72x40_reverse_byte((uint8_t)bits) << 8) |
-                     d72x40_reverse_byte((uint8_t)(bits >> 8)));
-    bits = (uint16_t)(bits >> (16 - count));
-    size_t height = (size_t)D72X40_CANVAS_PAGES * 8;
-    size_t native_x = (size_t)row;
-    unsigned shift = y % 8;
-    uint32_t ink = (uint32_t)bits << shift;
-    size_t at = (size_t)(y / 8) * height + native_x;
-    for (unsigned offset = 0; offset < count + shift; offset += 8, at += height) {
-        uint8_t chunk = (uint8_t)(ink >> offset);
-        cv->buf[at] = (uint8_t)(cv->buf[at] | chunk);
-    }
-}
-
+/* Native nine-bit rows: clip and locate controller pages once per lock. */
 static inline void d72x40_status_lock(const struct d72x40_canvas *cv, int x, int row,
                                        bool open) {
-    if (x <= -9 || x >= D72X40_CANVAS_WIDTH || row < 0 || row >= D72X40_CANVAS_PAGES * 8) {
+    if (x <= -9 || x >= D72X40_CANVAS_WIDTH || row < 0 || row >= D72X40_CANVAS_HEIGHT) {
         return;
     }
     static const uint16_t closed[11] = {
         0x038, 0x044, 0x082, 0x082, 0x082, 0x1ff, 0x1ef, 0x1c7, 0x1ef, 0x1ff, 0x1ff,
     };
     static const uint16_t opened[11] = {
-        0x0c0, 0x120, 0x110, 0x008, 0x008, 0x1ff, 0x1ef, 0x1c7, 0x1ef, 0x1ff, 0x1ff,
+        0x006, 0x009, 0x011, 0x020, 0x020, 0x1ff, 0x1ef, 0x1c7, 0x1ef, 0x1ff, 0x1ff,
     };
+    unsigned skip = x < 0 ? (unsigned)-x : 0;
+    if (x < 0) {
+        x = 0;
+    }
+    unsigned width = 9u - skip;
+    unsigned available = (unsigned)(D72X40_CANVAS_WIDTH - x);
+    if (width > available) {
+        width = available;
+    }
+    unsigned source_shift = 9u - skip - width;
+    uint16_t mask = (uint16_t)((1u << width) - 1u);
+    unsigned native_y = (unsigned)(D72X40_CANVAS_WIDTH - x) - width;
+    unsigned shift = native_y % 8u;
+    bool high = width + shift > 8u;
+    size_t at = (size_t)(native_y / 8u) * D72X40_PANEL_WIDTH + (size_t)row;
+    unsigned rows_available = (unsigned)(D72X40_CANVAS_HEIGHT - row);
+    unsigned height = rows_available < 11 ? rows_available : 11;
     const uint16_t *rows = open ? opened : closed;
-    for (unsigned y = 0; y < 11; y++) {
-        d72x40_native_lock_row(cv, x, row + (int)y, rows[y]);
+    for (unsigned y = 0; y < height; y++, at++) {
+        uint16_t ink = (uint16_t)((((unsigned)rows[y] >> source_shift) & mask) << shift);
+        cv->buf[at] |= (uint8_t)ink;
+        if (high) {
+            cv->buf[at + D72X40_PANEL_WIDTH] |= (uint8_t)(ink >> 8);
+        }
     }
 }
 
@@ -385,7 +296,7 @@ static inline void d72x40_status_battery(const struct d72x40_canvas *cv, int row
     d72x40_status_text(cv, D72X40_CANVAS_WIDTH - 8 - d72x40_status_width(value, SIZE_MAX),
                          row, value, SIZE_MAX, false);
     if (charging) {
-        d72x40_text_row(cv, D72X40_CANVAS_WIDTH - 6, row + 1, D72X40_SYM_BOLT, 1);
+        d72x40_symbol(cv, D72X40_CANVAS_WIDTH - 6, row + 1, D72X40_SYMBOL_BOLT);
     }
 }
 
@@ -395,42 +306,118 @@ static inline void d72x40_status_header(const struct d72x40_canvas *cv) {
     }
 }
 
-static inline void d72x40_render_portrait(const struct d72x40_canvas *cv,
-                                          const struct d72x40_status *st) {
-    int height = D72X40_CANVAS_PAGES * D72X40_PAGE_HEIGHT;
-    d72x40_status_header(cv);
-    d72x40_status_centred(cv, 2, st->layer, true);
-    if (st->ble_available) {
-        char profile[4] = "";
-        d72x40_append_u8(profile, sizeof(profile), st->profile);
-        int x = st->profile >= 100 ? 1 : 7;
-        if (st->profile < 100) {
-            d72x40_text_row(cv, 1, 17, D72X40_SYM_BLUETOOTH, 1);
+enum d72x40_status_group {
+    D72X40_GROUP_HEADER = 1u << 0,
+    D72X40_GROUP_CONNECTIONS = 1u << 1,
+    D72X40_GROUP_CAPS = 1u << 2,
+    D72X40_GROUP_BATTERY = 1u << 3,
+    D72X40_GROUP_PEER_BATTERY = 1u << 4,
+    D72X40_GROUP_LOCKS = 1u << 5,
+    D72X40_GROUP_ALL = (1u << 6) - 1u,
+};
+
+/* Every field affecting a group is compared before reusing its pixels. */
+static inline unsigned d72x40_status_changes(const struct d72x40_status *before,
+                                              const struct d72x40_status *after) {
+    unsigned groups = 0;
+    if (memcmp(before->layer, after->layer, sizeof(before->layer)) != 0) {
+        groups |= D72X40_GROUP_HEADER;
+    }
+    if (before->profile != after->profile || before->ble_available != after->ble_available ||
+        before->usb_available != after->usb_available || before->ble_link != after->ble_link ||
+        before->usb_link != after->usb_link) {
+        groups |= D72X40_GROUP_CONNECTIONS;
+    }
+    if (before->caps_lock != after->caps_lock) {
+        groups |= D72X40_GROUP_CAPS;
+    }
+    if (before->battery != after->battery || before->charging != after->charging ||
+        (before->peer_battery == D72X40_BATTERY_HIDDEN) !=
+            (after->peer_battery == D72X40_BATTERY_HIDDEN)) {
+        groups |= D72X40_GROUP_BATTERY;
+    }
+    if (before->peer_battery != after->peer_battery || before->peer_charging != after->peer_charging) {
+        groups |= D72X40_GROUP_PEER_BATTERY;
+    }
+    if (before->studio_lock_available != after->studio_lock_available ||
+        before->unlocked != after->unlocked ||
+        before->messenger_lock_available != after->messenger_lock_available ||
+        before->messenger_unlocked != after->messenger_unlocked) {
+        groups |= D72X40_GROUP_LOCKS;
+    }
+    return groups;
+}
+
+/* Logical rows are contiguous controller columns on every physical page.
+ * The header initializes its own inverted background; the other groups clear
+ * only their reserved columns. Blank margins between groups remain untouched. */
+static inline void d72x40_clear_columns(const struct d72x40_canvas *cv,
+                                         unsigned start, unsigned count) {
+    for (unsigned page = 0; page < D72X40_PANEL_PAGES; page++) {
+        memset(&cv->buf[(size_t)page * D72X40_PANEL_WIDTH + start], 0, count);
+    }
+}
+
+static inline void d72x40_clear_groups(const struct d72x40_canvas *cv, unsigned groups) {
+    static const uint8_t starts[] = {16, 27, 38, 49, 60};
+    static const uint8_t heights[] = {10, 10, 10, 10, 11};
+    for (unsigned i = 0; i < sizeof(starts); i++) {
+        if (groups & (D72X40_GROUP_CONNECTIONS << i)) {
+            d72x40_clear_columns(cv, starts[i], heights[i]);
         }
-        d72x40_status_text(cv, x, 16, profile, SIZE_MAX, false);
-        d72x40_text_row(cv, x + d72x40_status_width(profile, SIZE_MAX) + 1, 17,
-                          d72x40_link_mark(st->ble_link), 1);
     }
-    if (st->usb_available) {
-        static const uint8_t usb_rows[9] = {0x10, 0x38, 0x16, 0x56, 0xe8, 0x70, 0x10, 0x38, 0x38};
-        d72x40_native_bitmap(cv, D72X40_CANVAS_WIDTH - 15, 16, usb_rows, 9, false);
-        d72x40_text_row(cv, D72X40_CANVAS_WIDTH - 6, 17, d72x40_link_mark(st->usb_link), 1);
+}
+
+static inline void d72x40_render_groups(const struct d72x40_canvas *cv,
+                                         const struct d72x40_status *st, unsigned groups) {
+    if (groups & D72X40_GROUP_HEADER) {
+        d72x40_status_header(cv);
+        d72x40_status_centred(cv, 2, st->layer, true);
     }
-    if (st->caps_lock) {
+    if (groups & D72X40_GROUP_CONNECTIONS) {
+        if (st->ble_available) {
+            char profile[4] = "";
+            d72x40_append_u8(profile, sizeof(profile), st->profile);
+            int x = st->profile >= 100 ? 1 : 7;
+            if (st->profile < 100) {
+                d72x40_symbol(cv, 1, 17, D72X40_SYMBOL_BLUETOOTH);
+            }
+            d72x40_status_text(cv, x, 16, profile, SIZE_MAX, false);
+            d72x40_symbol(cv, x + d72x40_status_width(profile, SIZE_MAX) + 1, 17,
+                           d72x40_link_symbol(st->ble_link));
+        }
+        if (st->usb_available) {
+            static const uint8_t usb_rows[9] = {0x10, 0x38, 0x16, 0x56, 0xe8, 0x70, 0x10, 0x38, 0x38};
+            d72x40_native_bitmap(cv, D72X40_CANVAS_WIDTH - 15, 16, usb_rows, 9, false);
+            d72x40_symbol(cv, D72X40_CANVAS_WIDTH - 6, 17, d72x40_link_symbol(st->usb_link));
+        }
+    }
+    if ((groups & D72X40_GROUP_CAPS) && st->caps_lock) {
         d72x40_status_centred(cv, 27, "CAPS", false);
     }
-    d72x40_status_battery(cv, 38,
-                            st->peer_battery == D72X40_BATTERY_HIDDEN ? "B" : "L",
-                            st->battery, st->charging);
-    d72x40_status_battery(cv, 49, "R", st->peer_battery, st->peer_charging);
-    if (st->studio_lock_available) {
-        d72x40_status_text(cv, 1, height - 11, "S", 1, false);
-        d72x40_status_lock(cv, 9, height - 12, st->unlocked);
+    if (groups & D72X40_GROUP_BATTERY) {
+        d72x40_status_battery(cv, 38,
+                                st->peer_battery == D72X40_BATTERY_HIDDEN ? "B" : "L",
+                                st->battery, st->charging);
     }
-    if (st->messenger_lock_available) {
-        d72x40_status_text(cv, D72X40_CANVAS_WIDTH - 19, height - 11, "M", 1, false);
-        d72x40_status_lock(cv, D72X40_CANVAS_WIDTH - 10, height - 12, st->messenger_unlocked);
+    if (groups & D72X40_GROUP_PEER_BATTERY) {
+        d72x40_status_battery(cv, 49, "R", st->peer_battery, st->peer_charging);
     }
+    if (groups & D72X40_GROUP_LOCKS) {
+        if (st->studio_lock_available) {
+            d72x40_status_text(cv, 1, 61, "S", 1, false);
+            d72x40_status_lock(cv, 9, 60, st->unlocked);
+        }
+        if (st->messenger_lock_available) {
+            d72x40_status_text(cv, D72X40_CANVAS_WIDTH - 19, 61, "M", 1, false);
+            d72x40_status_lock(cv, D72X40_CANVAS_WIDTH - 10, 60, st->messenger_unlocked);
+        }
+    }
+}
+
+static inline void d72x40_render_portrait(const struct d72x40_canvas *cv,
+                                          const struct d72x40_status *st) {
+    d72x40_render_groups(cv, st, D72X40_GROUP_ALL);
 }
 
 static inline void d72x40_render(const struct d72x40_canvas *cv, const struct d72x40_status *st) {
@@ -447,24 +434,107 @@ static inline const char *d72x40_led_pattern_name(uint8_t pattern) {
     return pattern < sizeof(names) / sizeof(names[0]) ? names[pattern] : "?";
 }
 
+enum d72x40_led_group {
+    D72X40_LED_PATTERN = 1u << 0,
+    D72X40_LED_BRIGHTNESS = 1u << 1,
+    D72X40_LED_SPEED = 1u << 2,
+    D72X40_LED_ALL = (1u << 3) - 1u,
+};
+
+static inline void d72x40_render_led_groups(const struct d72x40_canvas *cv, uint8_t pattern,
+                                             uint8_t brightness, uint16_t speed, unsigned groups) {
+    if (groups & D72X40_LED_PATTERN) {
+        char id[8] = "P";
+        d72x40_append_u8(id, sizeof(id), pattern);
+        d72x40_status_centred(cv, 16, id, false);
+        d72x40_status_centred(cv, 27, d72x40_led_pattern_name(pattern), false);
+    }
+    if (groups & D72X40_LED_BRIGHTNESS) {
+        char level[8] = "B";
+        d72x40_append_u8(level, sizeof(level), brightness);
+        d72x40_append(level, sizeof(level), "%");
+        d72x40_status_centred(cv, 40, level, false);
+    }
+    if (groups & D72X40_LED_SPEED) {
+        char rate[8] = "S";
+        d72x40_append_u16(rate, sizeof(rate), speed);
+        d72x40_append(rate, sizeof(rate), "%");
+        d72x40_status_centred(cv, 56, rate, false);
+    }
+}
+
 static inline void d72x40_render_led_splash(const struct d72x40_canvas *cv, uint8_t pattern,
                                            uint8_t brightness, uint16_t speed) {
     d72x40_clear(cv);
-    char id[8] = "P";
-    d72x40_append_u8(id, sizeof(id), pattern);
-    char level[8] = "B";
-    d72x40_append_u8(level, sizeof(level), brightness);
-    d72x40_append(level, sizeof(level), "%");
-    char rate[8] = "S";
-    d72x40_append_u16(rate, sizeof(rate), speed);
-    d72x40_append(rate, sizeof(rate), "%");
-
     d72x40_status_header(cv);
     d72x40_status_centred(cv, 2, "LED", true);
-    d72x40_status_centred(cv, 16, id, false);
-    d72x40_status_centred(cv, 27, d72x40_led_pattern_name(pattern), false);
-    d72x40_status_centred(cv, 40, level, false);
-    d72x40_status_centred(cv, 56, rate, false);
+    d72x40_render_led_groups(cv, pattern, brightness, speed, D72X40_LED_ALL);
+}
+
+/* One cache belongs to one canvas; zero it whenever that canvas is reset.
+ * Exact state comparison is conservative: padding can only cause an extra draw.
+ * Status providers still run on every invalidation, including while dark. */
+#define D72X40_RENDER_CACHE 1
+struct d72x40_render_cache {
+    union {
+        struct d72x40_status status;
+        uint32_t led;
+    } last;
+    enum { D72X40_FRAME_EMPTY, D72X40_FRAME_STATUS, D72X40_FRAME_LED } kind;
+};
+
+static inline bool d72x40_render_cached(const struct d72x40_canvas *cv,
+                                         struct d72x40_render_cache *cache,
+                                         const struct d72x40_status *st) {
+    if (cache->kind == D72X40_FRAME_STATUS &&
+        memcmp(&cache->last.status, st, sizeof(*st)) == 0) {
+        return false;
+    }
+    if (cache->kind == D72X40_FRAME_STATUS) {
+        unsigned groups = d72x40_status_changes(&cache->last.status, st);
+        if (groups != 0 && groups != D72X40_GROUP_ALL) {
+            d72x40_clear_groups(cv, groups);
+            d72x40_render_groups(cv, st, groups);
+        } else {
+            /* Conservatively preserve redraws for retained nonvisual fields. */
+            d72x40_render(cv, st);
+        }
+    } else {
+        d72x40_render(cv, st);
+    }
+    cache->last.status = *st;
+    cache->kind = D72X40_FRAME_STATUS;
+    return true;
+}
+
+static inline bool d72x40_render_led_cached(const struct d72x40_canvas *cv,
+                                             struct d72x40_render_cache *cache,
+                                             uint8_t pattern, uint8_t brightness, uint16_t speed) {
+    uint32_t settings = (uint32_t)pattern | ((uint32_t)brightness << 8) | ((uint32_t)speed << 16);
+    if (cache->kind == D72X40_FRAME_LED && cache->last.led == settings) {
+        return false;
+    }
+    if (cache->kind == D72X40_FRAME_LED) {
+        uint32_t changed = cache->last.led ^ settings;
+        unsigned groups = ((changed & 0xffu) != 0 ? D72X40_LED_PATTERN : 0u) |
+                          ((changed & 0xff00u) != 0 ? D72X40_LED_BRIGHTNESS : 0u) |
+                          ((changed >> 16) != 0 ? D72X40_LED_SPEED : 0u);
+        unsigned first = (groups & D72X40_LED_PATTERN) ? 16u
+                         : (groups & D72X40_LED_BRIGHTNESS) ? 40u : 56u;
+        unsigned end = (groups & D72X40_LED_SPEED) ? 66u
+                       : (groups & D72X40_LED_BRIGHTNESS) ? 50u : 37u;
+        d72x40_clear_columns(cv, first, end - first);
+        /* A pattern/speed range includes brightness: restore its pixels too. */
+        if (groups == (D72X40_LED_PATTERN | D72X40_LED_SPEED)) {
+            groups = D72X40_LED_ALL;
+        }
+        d72x40_render_led_groups(cv, pattern, brightness, speed, groups);
+    } else {
+        d72x40_render_led_splash(cv, pattern, brightness, speed);
+    }
+    cache->last.led = settings;
+    cache->kind = D72X40_FRAME_LED;
+    return true;
 }
 
 static inline bool d72x40_canvas_pixel(const struct d72x40_canvas *cv, int x, int y) {

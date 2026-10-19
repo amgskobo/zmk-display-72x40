@@ -4,7 +4,7 @@
 DT_COMPAT_ZMK_DISPLAY_72X40 := zmk,display-72x40
 
 config ZMK_DISPLAY_72X40
-    bool "Fixed AKKB status panel without LVGL"
+    bool "Fixed 72x40 status panel without LVGL"
     default $(dt_compat_enabled,$(DT_COMPAT_ZMK_DISPLAY_72X40))
     # Both would own the same panel. ZMK's display runs LVGL and a 10 ms tick
     # while the keyboard is active; this module replaces it rather than
@@ -18,7 +18,7 @@ config ZMK_DISPLAY_72X40
     # posts the work that restarts advertising after a host disconnect.
     select ZMK_LOW_PRIORITY_WORK_QUEUE
     help
-      Draws the fixed AKKB 72x40 panel in 40x72 portrait coordinates
+      Draws the fixed 72x40 panel in 40x72 portrait coordinates
       through the Zephyr display API, with preconverted
       bitmap fonts instead of LVGL: the highest active layer, the host
       connection, the battery levels of both halves of a split, and Caps Lock

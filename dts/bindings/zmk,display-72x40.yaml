@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 description: |
-  An AKKB status panel drawn without LVGL on its fixed 72x40 monochrome
+  A status panel drawn without LVGL on its fixed 72x40 monochrome
   page-tiled display with a 40x72 portrait layout. The panel shows the highest active layer, the host
   connection, the battery levels, and Caps Lock and Studio's lock where those
   features are built in.

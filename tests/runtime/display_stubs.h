@@ -22,6 +22,29 @@
 #include <zmk-display-72x40/display_72x40_core.h>
 #include <zmk-display-72x40/display_72x40_splash.h>
 
+/* Observe actual draws without adding firmware probes or replacing the algorithm. */
+static unsigned render_calls;
+static inline void counted_render(const struct d72x40_canvas *cv, const struct d72x40_status *st) {
+    d72x40_render(cv, st); render_calls++;
+}
+#ifdef D72X40_RENDER_CACHE
+static inline bool counted_cached_render(const struct d72x40_canvas *cv,
+                                          struct d72x40_render_cache *cache,
+                                          const struct d72x40_status *st) {
+#ifdef D72X40_TEST_BYPASS_CACHE
+    (void)cache;
+    d72x40_render(cv, st);
+    bool drawn = true;
+#else
+    bool drawn = d72x40_render_cached(cv, cache, st);
+#endif
+    render_calls += drawn ? 1u : 0u;
+    return drawn;
+}
+#define d72x40_render_cached counted_cached_render
+#endif
+#define d72x40_render counted_render
+
 #define IS_ENABLED(option) option
 /* Not every build uses every stand-in. */
 #define STUB __attribute__((unused))
@@ -315,6 +338,9 @@ static STUB uint8_t d72x40_shown[D72X40_PAGES * D72X40_WIDTH];
 static STUB uint32_t d72x40_valid;
 static STUB bool d72x40_panel_on;
 static STUB uint8_t d72x40_failures;
+#ifdef D72X40_RENDER_CACHE
+static STUB struct d72x40_render_cache d72x40_render_state;
+#endif
 static STUB const struct d72x40_canvas d72x40_canvas = {.buf = d72x40_want};
 enum {
     D72X40_READY,
@@ -325,6 +351,7 @@ enum {
     D72X40_CONTRAST,
     D72X40_WAIT_PEER,
     D72X40_PEER_KICK,
+    D72X40_PEER_SEEN,
 };
 static STUB atomic_t d72x40_flags = ATOMIC_INIT(BIT(D72X40_REDRAW));
 struct d72x40_pass {

@@ -4,7 +4,7 @@
 
 [日本語](README_JA.md)
 
-The AKKB status panel for its fixed 72x40 OLED, drawn without LVGL as a
+A status panel for a fixed 72x40 OLED, drawn without LVGL as a
 40x72 portrait. Its controller page layout and mounting direction are fixed.
 There is no configurable orientation or general-purpose panel layout.
 
@@ -41,7 +41,7 @@ In the consuming config's `config/west.yml`:
 
 ### 2. Describe the panel
 
-Use the AKKB 72x40 SSD1306 on I2C with 8-pixel pages
+Use a 72x40 SSD1306 on I2C with 8-pixel pages
 (`SCREEN_INFO_MONO_VTILED`):
 
 ```dts
@@ -151,20 +151,28 @@ per page (360 bytes for 72x40), next to a copy of what the panel shows.
 1. A subscribed event sets a flag and schedules one pass on ZMK's
    low-priority work queue, `CONFIG_ZMK_DISPLAY_72X40_UPDATE_DELAY_MS` later. A
    layer event for a hidden layer returns before that.
-2. The pass reads the state and draws the whole frame. That is a few thousand
-   instructions, so no drawing state is kept between passes.
+2. The pass reads the current state. An exact comparison with the last rendered
+   status or LED tuple skips drawing when nothing changed. A changed status
+   redraws only affected fixed groups; the LED view redraws the changed value
+   range. A view switch or a complete status change draws a fresh full frame.
 3. It compares the frame with the copy page by page and sends each changed
    run of columns as one write. Runs at most 12 columns apart are sent
    together, since addressing a second run costs about as much. Portrait digits
    span more than one controller page; the exact sent bytes depend on the
    changed pixels and their neighboring values.
-4. While the panel is off, passes only draw; the frame goes out, before the
-   panel switches back on, at the next key, encoder turn or pointer report.
+4. While the panel is off, passes still acquire status and render changed
+   states without bus writes. The frame goes out before the panel switches
+   back on at the next key, encoder turn or pointer report.
 
 Nothing redraws between events, and the panel's timeout runs only while it is
 lit. Resource use depends on the selected features; use the current linked
 firmware's memory-region report rather than a historical module size. The fixed panel
 uses two 360-byte frame buffers, 720 bytes total, with no intermediate frame.
+A separate exact-state cache is 44 bytes on the supported ARM/native ABI; it is
+not another frame. It is owned by the display work handler and reset at init.
+Partial rendering reuses that same cache and adds no persistent RAM. Peer
+battery visibility also invalidates the local B/L label. A changed LED range
+restores every value inside it, including an unchanged middle brightness line.
 ZMK's own display adds
 LVGL, its fonts and object tree, and a 10ms tick while the keyboard is active.
 
@@ -192,7 +200,7 @@ pin.
 ## Fixed mounting and migration
 
 The drawing is permanently 40x72 and writes directly into the controller's
-72x40 page memory. The existing AKKB screen appearance is preserved. The
+72x40 page memory. The existing screen appearance is preserved. The
 rotation property, all orientation selectors, generic projection and landscape
 layouts have been removed. Delete any old rotation property from the status
 node; even an explicit zero is rejected at build time rather than ignored.
@@ -215,7 +223,8 @@ A link is reported up before the central has subscribed to the peripheral's
 relay characteristic, and a notify sent before that is dropped without saying
 so - the send queues the event and reports success either way - so the state
 also goes out four times over the first few seconds of a link. The repeats
-do not add panel bytes when the frame is unchanged; event and rendering work still occurs.
+do not add panel bytes or redraw an identical status; event handling and
+status acquisition still occur.
 
 Both symbols default on where they can be: the reporter on an nRF split
 peripheral with `CONFIG_ZMK_SPLIT_RELAY_EVENT`, the central side wherever that
@@ -356,7 +365,7 @@ ZMK's public event and state functions.
   events against a recording display and checks what reaches the panel,
   including external lock/LED inputs with both producer modules absent.
 
-The font lives in `scripts/font5x7.txt`; `scripts/gen_font.py` regenerates
+The dedicated symbols live in `scripts/font5x7.txt`; `scripts/gen_font.py` regenerates
 `include/zmk-display-72x40/display_72x40_font.h` from it.
 The portrait subset lives in `scripts/status10.txt`;
 `scripts/gen_status_font.py` regenerates `display_72x40_status_font.h`.
@@ -366,7 +375,9 @@ Drawing uses one fixed controller-page format. The canvas contains only a
 buffer pointer, with no dimensions, orientation state or storage hint. Text
 uses preconverted row data; clipping and controller offsets are calculated
 once per strip. The font has 950 bytes of pixels and 95 bytes of spacing data.
-Filled locks retain the dedicated nine-pixel writer. The two frame buffers
+Filled locks use preconverted nine-bit rows, with clipping and page location
+calculated once per icon. The unused old 5x7 ASCII table, column plotter and
+generic text path have been removed; normal text retains its fallback glyph. The two frame buffers
 remain 720 bytes; there is no projection buffer. See the
 [assertion migration map](tests/fixed-layout-migration.md) for retired generic
 cases and their fixed-display replacements. CPU timing and power on the real

@@ -12,10 +12,13 @@
     "python3 -m unittest discover -v -s tests -p 'test_*.py'",
     "ZMK_TEST_OFFLINE_WORKSPACE=/absolute/resolved/workspace ZMK_TEST_OUTPUT=/absolute/new/output bash tests/integration/run.sh upstream|dya",
     "python3 -m unittest discover -v -s tests/integration -p test_registration.py",
-    "ZMK_TEST_OFFLINE_WORKSPACE=/absolute/resolved/workspace ZMK_TEST_OUTPUT=/absolute/new/output bash tests/integration/check-fixed-panel.sh upstream|dya"
+    "ZMK_TEST_OFFLINE_WORKSPACE=/absolute/resolved/workspace ZMK_TEST_OUTPUT=/absolute/new/output bash tests/integration/check-fixed-panel.sh upstream|dya",
+    "python3 tests/check_render_cache.py --output FRESH_OUTPUT",
+    "python3 tests/benchmark_render.py --baseline-include ORIGINAL_INCLUDE --output FRESH_OUTPUT --iterations 2000000 --repeats 3",
+    "python3 tests/check_partial_render.py --baseline-include ORIGINAL_INCLUDE --output FRESH_OUTPUT"
   ],
   "coverage_map": "tests/contract.json",
-  "preserved_assertions": "Fixed-display assertions retained and consolidated in the core fixture; unsupported generic orientations/layouts explicitly retired per tests/fixed-layout-migration.md, source archived before deletion.",
+  "preserved_assertions": "Fixed-display assertions retained and consolidated in the core fixture; unsupported generic orientations/layouts explicitly retired per tests/fixed-layout-migration.md, source archived before deletion. Native symbol/lock migration preserves every current fixed-display assertion; old private 5x7 ASCII and column APIs are retired per the same migration map.",
   "execution": {
     "quick": "All host behavioral scenarios once; sanitizers on C fixtures; validator/process units once.",
     "full": "Same host scenarios under optimized, sanitizer and measured coverage builds; kernel and supported stock/DYA interfaces use the separate integration entry.",
@@ -27,7 +30,15 @@
     "Host extracted functions and controlled registry/kernel/tool stand-ins are not real scheduling or storage evidence.",
     "Physical panel/I2C/shared-bus deadlines, USB/BLE/split delivery, reset persistence and power/current require matching production-board evidence.",
     "Hosted moving-core CI and artifact upload require an observed hosted run, separate from locally audited offline pins.",
-    "DYA online retrieval of a private LED dependency requires a separately provisioned repository read-only deploy key; optional wrapper support grants no access."
+    "Public LED dependencies use manifest HTTPS with no CI secret. A currently private LED dependency still needs separately provisioned read access; optional key support grants none. Admission tests do not prove online fetch/build success."
   ],
-  "fixed_display": "AKKB 72x40 physical storage, 40x72 drawing, two 360-byte buffers; no configurable orientation or projection"
+  "fixed_display": "Fixed 72x40 physical storage, 40x72 drawing, two 360-byte buffers; no configurable orientation or projection",
+  "render_efficiency": {
+    "cache": "Exact40-byte status or32-bit LED tuple plus kind;44-byte cache on supported ARM/native ABI; reset at canvas init; work-handler ownership",
+    "contracts": "Status acquisition preserved while dark; repeated identical notifications skip actual rendering; view switch/change/reset redraw; unknown pages/refresh/retries still flush.",
+    "negative_control": "tests/check_render_cache.py requires normal pass and exact draw/write assertion failure with test-only bypass",
+    "benchmark": "Eleven explicit mixed/repeated/single-field workloads, same actual headers/input/compiler, >=3 repeats per binary. Host CPU only; Flash/RAM must come from real linked firmware.",
+    "partial": "Six fixed normal groups and bounded LED ranges reuse the same44-byte cache; peer visibility invalidates B/L label; unchanged intermediate LED value restored. Full view changes/reset and complete status updates retain full rendering.",
+    "partial_control": "tests/test_partial_render.c runs under quick/full; check_partial_render.py compiles the same fixture against actual prior/current headers and requires exact original sentinel assertion failures plus current complete-frame equality."
+  }
 }

@@ -46,10 +46,11 @@ write, and requires the final driver value to remain 10 seconds. The fixture
 uses condition rendezvous and a bounded stall watchdog. It checks callback
 serialization rather than persistent storage or real Zephyr scheduling.
 
-`test_small_canvas_and_offscreen_guards` checks negative glyph rows and extreme
-coordinates without corrupting the canvas. `test_text_width` returns zero for
-nonpositive cells and saturates only unrepresentable positive widths; text
-position helpers retain exact representable next-x values.
+`test_bitmap_edges`, `test_direct_symbols_and_numbers` and
+`test_status_font_and_locks` check negative/extreme coordinates, independent
+logical symbol pixels, all 256 text codes, clip/erase edges and saturated
+unrepresentable text widths. Removed generic width/cell APIs are listed in
+the migration map.
 
 The full runtime fixture includes `test_quiet_race`, `test_quiet_setter_ordering`,
 `test_splash_wrap` and `test_splash_republish`. The setter-ordering case admits a
@@ -80,7 +81,7 @@ connection/Caps/battery groups and filled locks with diagonal opening shackles.
 reference for all lock combinations, three routes, and battery/charging/Caps
 states. The old row assertions changed intentionally for this visual design;
 no timing trace or transport expectation was accepted to hide a failure.
-## Fixed AKKB layout and assertion migration
+## Fixed panel layout and assertion migration
 
 The owner supports one 72x40 controller frame and a fixed 40x72 drawing layout.
 The core fixture retains the 24 independently approved frames pixel by pixel.
@@ -101,7 +102,7 @@ removed landscape layout's first two controller pages.
 The removed generic font/layout/projection and orientation specialization tests
 are archived and mapped in [fixed-layout-migration.md](fixed-layout-migration.md).
 There is no alternate storage format, compiler hint, orientation parameter or
-reference renderer. One core binary per compiler variant exercises the fixed
+production reference renderer. One core binary per compiler variant exercises the fixed
 implementation. The fixed panel admission fixture compiles actual production
 assertions; it is a metadata/compile check, not physical acceptance.
 
@@ -236,11 +237,20 @@ the checked-in GitHub host key read-only outside source/evidence, uses strict
 host verification, and configures only the LED repository URL for SSH. Key
 contents are never copied into output. The pinned public host key is documented
 by [GitHub](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
-CI uses the repository secret `LED_DEPENDENCY_READ_KEY`; it stores the temporary
-file under `RUNNER_TEMP` and removes it on success or failure. Fork PRs receive
-no repository secret and therefore fail the DYA dependency-access gate explicitly.
-Configuring support does not grant access: the LED deploy key and Display secret
-must be provisioned separately.
+CI uses the manifest HTTPS URL when no optional
+`LED_DEPENDENCY_READ_KEY` is supplied. Public LED repositories require no secret,
+and an empty or absent key no longer stops CI before dependency retrieval.
+If an explicit key is supplied, CI stores it under `RUNNER_TEMP` and removes it
+on success or failure. A private repository still needs real read access;
+optional support grants none. Fork PRs receive no repository secret and can
+retrieve only dependencies available without that secret.
+
+`tests/integration/prepare-led-access.sh` is the actual CI admission entry.
+`test_led_dependency_access.py` executes its absent/empty-key path, private
+file permissions, no-secret-log and missing-runner-path boundaries. The public
+DYA wrapper fixture verifies the actual Docker argv contains no credential
+mount or URL rewrite. These recording-tool checks prove admission, not a real
+GitHub fetch or firmware compatibility.
 
 CI is configured to keep host console output and each upstream/DYA integration
 output under a separate artifact using `always()` and `pipefail`. Scheduled
@@ -282,3 +292,104 @@ rejection of an old orientation property and a wrong physical width.
 Each negative build must emit its exact panel-contract diagnostic; unrelated
 compiler failures do not count as a passing rejection. These are additional
 configuration guards, separate from the five valid integration configurations.
+
+## Exact-state rendering efficiency
+
+The core keeps normal text in Panel Status 10 and status symbols in one native
+row table. The old 5x7 ASCII/column path is retired, with its original source
+and unique assertions mapped in [fixed-layout-migration.md](fixed-layout-migration.md).
+Lock clipping/page calculations occur once per icon rather than for each row.
+
+The exact-state cache is 44 bytes on the supported ARM/native ABI, beside the
+unchanged two 360-byte frame buffers. It belongs to one canvas, must be reset
+when that canvas resets, and is accessed only by the display work handler.
+In the normal status view, every invalidation still acquires current data,
+including external providers while dark. The LED view retains its existing
+numeric-tuple acquisition. Identical state skips drawing. Changed normal fields
+redraw their affected groups; changed LED values clear/render their bounded
+range. View switches and cache reset draw a fresh complete frame. Unknown panel pages, explicit refresh, retries,
+contrast and blank/wake continue through the existing bus/power policy.
+
+The core fixture checks every status field, all LED tuple boundary combinations,
+independent caches, both view switches, reset, direct symbol pixels and every
+16-bit numeric value at capacities1..8. The runtime fixture observes actual
+draw calls and requires 100 identical invalidations to add neither draws nor
+panel writes. All prior selected-route/readiness assertions remain.
+
+Run the focused negative control from this owner:
+
+```bash
+python3 tests/check_render_cache.py --output /absolute/new/cache-control
+```
+
+It compiles the same public emitted full fixture normally and with a test-only
+cache bypass. Normal must pass; bypass must abort specifically at the
+unchanged-notification draw/write assertion. The production algorithm is not
+rewritten or replaced. Raw commands, compiler output and actual exits remain.
+
+For a repeatable host process CPU comparison against preserved original
+headers, run:
+
+```bash
+python3 tests/benchmark_render.py --baseline-include /absolute/original/include \
+  --output /absolute/new/benchmark --iterations 2000000 --repeats 3
+```
+
+Both revisions use the same owner benchmark, inputs, compiler and -Os/-O2 flags.
+The same compiled binary is reused for three or more repeats, with alternating
+revision order. Eleven scenarios retain the original mixed/repeated status and
+LED changes, and add individual layer/battery/lock/profile and LED
+pattern/brightness/speed changes. Observable checksums and final frame hashes must
+match before reporting medians. This measures host process CPU only; the
+synthetic repeat ratio is explicit and establishes no real notification rate,
+MCU speed, I2C timing or electrical/power result.
+
+## Fixed-group partial rendering
+
+The normal-view cache compares all fields feeding six groups: header,
+connections, Caps, local battery, peer battery and locks. Peer battery visibility
+also changes the local B/L label. Full status changes and retained nonvisual
+field changes use the complete path. No status field or selected-route assertion
+was removed. LED updates clear one bounded value range; a pattern+speed update
+also redraws the unchanged brightness line inside that range. The constant LED
+header remains untouched. Views, expiry, reset and explicit panel refresh retain
+their existing policy. The cache and mutable RAM are unchanged.
+
+The core fixture compares576 approved-state transitions,64 dirty-group
+combinations in both directions and64 LED boundary-tuple transitions with full
+rendering. All prior24 independent pixel goldens and67 frame checksums remain.
+The field-to-group cases include connection availability, label coupling and
+both directions of disappearing groups. No old assertion was retired here.
+
+[The partial-update fixture](test_partial_render.c) runs in every quick/full C
+variant. A fixture-only sentinel in the unrelated inverted header must survive a
+battery or LED brightness update. Restoring the sentinel must then produce the
+exact complete frame. There is no firmware probe or alternate renderer.
+
+To prove the assertions reject the actual previous full-redraw implementation:
+
+```bash
+python3 tests/check_partial_render.py --baseline-include /absolute/original/include \
+  --output /absolute/new/partial-control
+```
+
+The same fixture compiles against current and preserved original headers without
+rewriting either source. Both original status/LED cases must fail at the exact
+untouched-group sentinel assertion; both current cases must pass. Raw exits,
+compiler output and header identities remain in the fresh output directory.
+
+Benchmark modes are0=repeated mixed status,1=changing mixed status,
+2=repeated LED tuple,3=changing LED tuple,4=layer,5=local battery,6=Messenger lock,
+7=Profile,8=LED pattern,9=LED brightness,10=LED speed. Mode0/2 changes once
+per100 notifications; all other modes change every notification. This explicit
+workload does not establish actual device event rates or power savings.
+
+## Sync timestamp boundary
+
+The peer-report timestamp has a separate seen bit in the existing atomic flags;
+zero is valid at boot and after32-bit uptime wrap. The host full fixture
+checks absent/non-sync input, a completed report at0, the exact window edge,
+UINT32_MAX-to0 and a new report at0. An unknown frame remains queued without
+a bus write while that report is recent. These controlled-time cases use the
+actual driver functions; the native matrices separately retain real-kernel
+one-operation-per-report assertions. Physical bus timing remains a separate gate.
