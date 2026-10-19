@@ -2,14 +2,13 @@
 # SPDX-License-Identifier: MIT
 
 description: |
-  A status panel drawn without LVGL on a monochrome, page-tiled display: the
-  SSD1306, SSD1309 and SH1106 drivers, or any Zephyr display that reports
-  SCREEN_INFO_MONO_VTILED. The panel shows the highest active layer, the host
+  A status panel drawn without LVGL on its fixed 72x40 monochrome
+  page-tiled display with a 40x72 portrait layout. The panel shows the highest active layer, the host
   connection, the battery levels, and Caps Lock and Studio's lock where those
   features are built in.
 
   It draws only when something it shows has changed, and then sends only the
-  columns that changed. It keeps no timer running.
+  columns that changed. It has no periodic redraw timer.
 
   Declare one node, on a unibody keyboard or a split central:
 
@@ -27,8 +26,8 @@ properties:
     type: phandle
     required: true
     description: |
-      The display to draw on. Its node's width and height give the canvas
-      size; the height must be a multiple of 8.
+      The display to draw on. The panel must be exactly 72 pixels wide
+      and 40 pixels high. Drawing coordinates are fixed at 40x72.
 
   hidden-layers:
     type: array
@@ -67,16 +66,3 @@ properties:
       module holds the line low for CONFIG_ZMK_DISPLAY_72X40_RESET_PULSE_MS
       and waits CONFIG_ZMK_DISPLAY_72X40_RESET_SETTLE_MS before the driver
       runs.
-
-  rotation:
-    type: int
-    default: 0
-    enum: [0, 90, 180, 270]
-    description: |
-      How far counter-clockwise the drawing is turned before it is sent, for
-      a panel mounted on its side. These controllers cannot turn a picture
-      themselves, so the module lays the status out for the turned size (a
-      72x40 panel at 90 or 270 is drawn as 40 wide and 72 tall, with the
-      battery lines one above the other) and turns it column by column on the
-      way out. A turned panel must be a multiple of 8 columns wide. If the
-      panel reads upside down, use the other right angle.

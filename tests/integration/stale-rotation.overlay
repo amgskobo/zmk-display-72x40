@@ -1,0 +1,2 @@
+/* SPDX-License-Identifier: MIT */
+/ { status_panel { rotation = <90>; }; };

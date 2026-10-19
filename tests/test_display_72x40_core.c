@@ -1,569 +1,189 @@
-/*
- * Copyright (c) 2026 amgskobo
+/* Copyright (c) 2026 amgskobo
  * SPDX-License-Identifier: MIT
- *
- * Host tests for the drawing core. Set D72X40_TEST_DUMP=1 to print every frame
- * the tests draw as text.
+ * Fixed 72x40 panel: independent pixel expectations and pre-refactor frames.
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <limits.h>
 #include <zmk-display-72x40/display_72x40_core.h>
+#include "approved_portrait_frames.h"
+#include "fixed_frame_hashes.h"
 
+_Static_assert(D72X40_FRAME_BYTES == 360, "one physical frame");
+_Static_assert(sizeof(struct d72x40_canvas) == sizeof(uint8_t *), "no orientation or size state");
+_Static_assert(sizeof(d72x40_status_rows) + sizeof(d72x40_status_advance) == 1045, "one font format");
 static int failures;
-
-#define CHECK(expr)                                                                                \
-    do {                                                                                           \
-        if (!(expr)) {                                                                             \
-            fprintf(stderr, "%s:%d: CHECK(%s) failed\n", __FILE__, __LINE__, #expr);               \
-            failures++;                                                                            \
-        }                                                                                          \
-    } while (0)
-
-#define MAX_WIDTH 128
-#define MAX_PAGES 9
-
-struct frame {
-    uint8_t buf[MAX_WIDTH * MAX_PAGES];
-    struct d72x40_canvas cv;
-};
-
-static void frame_init(struct frame *f, uint16_t width, uint16_t pages) {
-    memset(f->buf, 0, sizeof(f->buf));
-    f->cv = (struct d72x40_canvas){.buf = f->buf, .width = width, .pages = pages};
+#define CHECK(expr) do { if (!(expr)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #expr); failures++; } } while (0)
+struct frame { uint8_t before[16], buf[360], after[16]; struct d72x40_canvas cv; };
+static void frame_init(struct frame *f) {
+    memset(f, 0, sizeof(*f)); memset(f->before, 0xa5, sizeof(f->before)); memset(f->after, 0x5a, sizeof(f->after));
+    f->cv = (struct d72x40_canvas){.buf = f->buf};
 }
-
+static void guarded(const struct frame *f) {
+    for (size_t i=0; i<16; i++) { CHECK(f->before[i] == 0xa5); CHECK(f->after[i] == 0x5a); }
+}
+/* Fixed panel specification: logical (x,y) is controller (y,39-x). */
 static bool pixel(const struct d72x40_canvas *cv, int x, int y) {
-    uint8_t column = cv->buf[(size_t)(y / D72X40_PAGE_HEIGHT) * cv->width + (size_t)x];
-    return (column >> (y % D72X40_PAGE_HEIGHT)) & 1;
+    unsigned py = (unsigned)(39-x);
+    return (((unsigned)cv->buf[(py/8)*72+(unsigned)y] >> (py%8)) & 1u) != 0;
 }
-
-static void dump(const struct d72x40_canvas *cv, const char *title) {
-    if (getenv("D72X40_TEST_DUMP") == NULL) {
-        return;
-    }
-    printf("%s (%ux%u)\n", title, (unsigned)cv->width,
-           (unsigned)(cv->pages * D72X40_PAGE_HEIGHT));
-    for (int y = 0; y < cv->pages * D72X40_PAGE_HEIGHT; y++) {
-        for (int x = 0; x < cv->width; x++) {
-            putchar(pixel(cv, x, y) ? '#' : '.');
+static void ink(uint8_t *out, int x, int y, bool set, bool erase) {
+    if (x<0 || x>=40 || y<0 || y>=72 || !set) return;
+    unsigned py=(unsigned)(39-x); size_t at=(py/8)*72+(unsigned)y; uint8_t mask=(uint8_t)(1u<<(py%8));
+    out[at]=erase ? (uint8_t)(out[at] & (uint8_t)~mask) : (uint8_t)(out[at] | mask);
+}
+static uint64_t hash_frame(const uint8_t *frame) {
+    uint64_t h=UINT64_C(14695981039346656037);
+    for(size_t i=0;i<360;i++) h=(h^frame[i])*UINT64_C(1099511628211);
+    return h;
+}
+static struct d72x40_status approved_status(const struct d72x40_approved_frame *g) {
+    struct d72x40_status st={.profile=2,.ble_available=true,.usb_available=true,
+        .ble_link=g->route==0?D72X40_LINK_UP:g->route==1?D72X40_LINK_OPEN:D72X40_LINK_DOWN,
+        .usb_link=g->route==1?D72X40_LINK_UP:D72X40_LINK_OPEN,
+        .battery=g->battery,.peer_battery=g->peer_battery,.studio_lock_available=true,.messenger_lock_available=true,
+        .unlocked=g->studio,.messenger_unlocked=g->messenger,.caps_lock=g->caps,.charging=g->charging};
+    strcpy(st.layer,g->layer); return st;
+}
+static void test_approved_frames(void) {
+    struct frame f; size_t next=0;
+    for(size_t i=0;i<24;i++) {
+        frame_init(&f); struct d72x40_status st=approved_status(&d72x40_approved_frames[i]);
+        d72x40_render(&f.cv,&st);
+        for(int y=0;y<72;y++) for(int x=0;x<40;x++) {
+            bool expected=(((unsigned)d72x40_approved_frames[i].pixels[(y/8)*40+x]>>(y%8))&1u)!=0;
+            CHECK(pixel(&f.cv,x,y)==expected);
         }
-        putchar('\n');
+        CHECK(hash_frame(f.buf)==fixed_frame_hashes[next++]); guarded(&f);
+        st.profile=UINT8_MAX; st.peer_charging=true; d72x40_render(&f.cv,&st);
+        CHECK(hash_frame(f.buf)==fixed_frame_hashes[next++]); guarded(&f);
     }
-    putchar('\n');
+    for(unsigned id=0;id<=18;id++) {
+        d72x40_render_led_splash(&f.cv,(uint8_t)id,UINT8_MAX,UINT16_MAX);
+        CHECK(hash_frame(f.buf)==fixed_frame_hashes[next++]); guarded(&f);
+    }
+    CHECK(next==67);
+    CHECK(strcmp(d72x40_led_pattern_name(255),"?")==0);
+    for(unsigned id=0;id<18;id++) CHECK(strlen(d72x40_led_pattern_name((uint8_t)id))<=6);
+    /* Regression control: every physical pixel is material to a full-frame comparison. */
+    uint64_t before=hash_frame(f.buf); f.buf[359]^=1; CHECK(hash_frame(f.buf)!=before);
 }
-
-/* The leftmost and rightmost lit columns within rows y0..y1. */
-static bool lit_extent(const struct d72x40_canvas *cv, int y0, int y1, int *first, int *last) {
-    *first = -1;
-    *last = -1;
-    for (int x = 0; x < cv->width; x++) {
-        for (int y = y0; y <= y1; y++) {
-            if (pixel(cv, x, y)) {
-                if (*first < 0) {
-                    *first = x;
-                }
-                *last = x;
-                break;
-            }
+static void test_bitmap_edges(void) {
+    const uint8_t rows[11]={0x81,0x42,0x24,0x18,0xff,0,0x81,0x5a,0xa5,0x7e,1};
+    const unsigned heights[]={0,1,7,8,9,11}; struct frame f; uint8_t expected[360];
+    for(int x=-9;x<=40;x++) for(int y=-1;y<=72;y++) for(size_t h=0;h<6;h++) for(int erase=0;erase<=1;erase++) {
+        frame_init(&f); memset(f.buf,erase?0xff:0x24,360); memcpy(expected,f.buf,360);
+        d72x40_native_bitmap(&f.cv,x,y,rows,heights[h],erase!=0);
+        if(y>=0 && y<72) for(unsigned j=0;j<heights[h];j++) for(int bit=0;bit<8;bit++)
+            ink(expected,x+bit,y+(int)j,((rows[j]>>(7-bit))&1u)!=0,erase!=0);
+        CHECK(memcmp(expected,f.buf,360)==0); guarded(&f);
+    }
+    const int extreme[]={INT_MIN,INT_MAX};
+    for(size_t i=0;i<2;i++) {
+        frame_init(&f); d72x40_native_bitmap(&f.cv,extreme[i],0,rows,11,false);
+        d72x40_native_bitmap(&f.cv,0,extreme[i],rows,11,false);
+        CHECK(hash_frame(f.buf)==hash_frame((uint8_t[360]){0})); guarded(&f);
+    }
+}
+static void test_status_font_and_locks(void) {
+    struct frame f; uint8_t expected[360];
+    for(unsigned code=0;code<=255;code++) {
+        unsigned index=code>=32 && code<=126?code-32:(unsigned)'?'-32;
+        CHECK(d72x40_status_glyph((unsigned char)code)==d72x40_status_rows[index]);
+        if (code >= 32 && code <= 126) {
+            unsigned any = 0;
+            for (unsigned row = 0; row < 10; row++) any |= d72x40_status_rows[index][row];
+            CHECK(code == ' ' ? any == 0 : any != 0);
         }
-    }
-    return *first >= 0;
-}
-
-static bool row_blank(const struct d72x40_canvas *cv, int y) {
-    for (int x = 0; x < cv->width; x++) {
-        if (pixel(cv, x, y)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/* True when page holds exactly the given pieces of text and nothing else. */
-static bool page_is(const struct d72x40_canvas *cv, int page, int x1, const char *s1, int x2,
-                    const char *s2) {
-    struct frame expect;
-    frame_init(&expect, cv->width, cv->pages);
-    if (s1 != NULL) {
-        d72x40_text(&expect.cv, x1, page, s1);
-    }
-    if (s2 != NULL) {
-        d72x40_text(&expect.cv, x2, page, s2);
-    }
-    return memcmp(&cv->buf[(size_t)page * cv->width], &expect.buf[(size_t)page * cv->width],
-                  cv->width) == 0;
-}
-
-static bool studio_mark_is(const struct d72x40_canvas *cv, int page, bool unlocked) {
-    static const uint8_t locked_icon[14] = {
-        0x00, 0x00, 0xf0, 0xfe, 0x91, 0x91, 0xd1, 0xd1,
-        0x91, 0x91, 0xfe, 0xf0, 0x00, 0x00,
-    };
-    static const uint8_t unlocked_icon[14] = {
-        0x00, 0x00, 0xe0, 0xe0, 0xa0, 0xae, 0xe1, 0xe1,
-        0xa1, 0xa1, 0xe1, 0xe1, 0x0e, 0x10,
-    };
-    const uint8_t *row = cv->buf + (size_t)page * cv->width;
-    const uint8_t *icon = unlocked ? unlocked_icon : locked_icon;
-    struct frame label;
-    frame_init(&label, cv->width, cv->pages);
-    d72x40_text(&label.cv, (int)cv->width - 39, page,
-                unlocked ? "OPEN" : "LOCK");
-    return memcmp(row + cv->width - 39,
-                  label.buf + (size_t)page * cv->width + cv->width - 39,
-                  (size_t)d72x40_text_width(4, D72X40_CELL)) == 0 &&
-           memcmp(row + cv->width - 15, icon, 14) == 0;
-}
-
-static struct d72x40_status split_status(void) {
-    struct d72x40_status st = {
-        .transport = D72X40_TRANSPORT_BLE,
-        .link = D72X40_LINK_UP,
-        .profile = 1,
-        .battery = 85,
-        .peer_battery = 72,
-    };
-    strcpy(st.layer, "BASE");
-    return st;
-}
-
-static void test_font(void) {
-    for (int c = 0; c < 0x80; c++) {
-        const uint8_t *g = d72x40_glyph((unsigned char)c);
-        for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
-            /* Seven rows: the eighth row of a page stays the line gap. */
-            CHECK((g[col] & 0x80) == 0);
+        if(code==0) continue;
+        for(int x=-9;x<=40;x+=7) for(int y=-1;y<=72;y++) for(int erase=0;erase<=1;erase++) {
+            frame_init(&f); memset(f.buf,erase?0xff:0,360); memcpy(expected,f.buf,360); char text[2]={(char)code,0};
+            d72x40_status_text(&f.cv,x,y,text,1,erase!=0);
+            if(y>=0 && y<72) for(int row=0;row<10;row++) for(int col=0;col<8;col++)
+                ink(expected,x+col,y+row,((d72x40_status_rows[index][row]>>(7-col))&1u)!=0,erase!=0);
+            CHECK(memcmp(expected,f.buf,360)==0); guarded(&f);
         }
     }
-    int lit = 0;
-    for (int c = D72X40_FONT_ASCII_FIRST + 1; c <= D72X40_FONT_ASCII_LAST; c++) {
-        const uint8_t *g = d72x40_glyph((unsigned char)c);
-        int any = 0;
-        for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
-            any |= g[col];
-        }
-        lit += any != 0;
+    static const uint16_t closed[11]={0x038,0x044,0x082,0x082,0x082,0x1ff,0x1ef,0x1c7,0x1ef,0x1ff,0x1ff};
+    static const uint16_t opened[11]={0x0c0,0x120,0x110,0x008,0x008,0x1ff,0x1ef,0x1c7,0x1ef,0x1ff,0x1ff};
+    for(int x=-10;x<=40;x++) for(int y=-1;y<=72;y++) for(int open=0;open<=1;open++) {
+        frame_init(&f); memset(expected,0,360); d72x40_status_lock(&f.cv,x,y,open!=0);
+        if(y>=0 && y<72) for(int row=0;row<11;row++) for(int col=0;col<9;col++)
+            ink(expected,x+col,y+row,(((open?opened:closed)[row]>>col)&1u)!=0,false);
+        CHECK(memcmp(expected,f.buf,360)==0); guarded(&f);
     }
-    CHECK(lit == D72X40_FONT_ASCII_LAST - D72X40_FONT_ASCII_FIRST);
-    for (int col = 0; col < D72X40_FONT_WIDTH; col++) {
-        CHECK(d72x40_glyph(' ')[col] == 0);
-    }
-    CHECK(d72x40_glyph(0x80) == d72x40_glyph('?'));
-    CHECK(d72x40_glyph(0xff) == d72x40_glyph('?'));
-    CHECK(d72x40_glyph(0x1f) == d72x40_glyph('?'));
-    CHECK(d72x40_glyph(0x01) != d72x40_glyph('?'));
+    frame_init(&f); d72x40_status_lock(&f.cv,0,INT_MIN,false);
+    d72x40_status_lock(&f.cv,0,INT_MAX,true);
+    d72x40_status_lock(&f.cv,INT_MIN,0,false); d72x40_status_lock(&f.cv,INT_MAX,0,false); guarded(&f);
+    CHECK(d72x40_text_advance(INT_MAX,6)==INT_MAX);
+    CHECK(d72x40_text_advance(INT_MAX-6,6)==INT_MAX);
+    CHECK(d72x40_text_advance(INT_MIN,6)==INT_MIN+6);
+    CHECK(d72x40_status_width("",SIZE_MAX)==0); CHECK(d72x40_status_width("AB",0)==0);
+    CHECK(d72x40_status_width("AB",1)==d72x40_status_advance['A'-32]);
+    d72x40_status_text(&f.cv,40,0,"A",1,false); d72x40_status_text(&f.cv,0,0,"A",0,false);
+    d72x40_status_text(&f.cv,0,0,"",1,false); d72x40_status_centred(&f.cv,0,"AAAAAAAAAAAAAAAAAAAAAA",false); guarded(&f);
 }
 
-static void test_text_width(void) {
-    CHECK(d72x40_text_width(0, D72X40_CELL) == 0);
-    CHECK(d72x40_text_width(1, D72X40_CELL) == 5);
-    CHECK(d72x40_text_width(12, D72X40_CELL) == 71);
-    CHECK(d72x40_text_width(1, D72X40_WIDE_CELL) == 10);
-    CHECK(d72x40_text_width(6, D72X40_WIDE_CELL) == 70);
-}
-
-static void test_tall_column(void) {
-    CHECK(d72x40_tall_column(0) == 0);
-    /* The top font row becomes rows 1-2; row 0 stays blank. */
-    CHECK(d72x40_tall_column(0x01) == 0x0006);
-    /* The bottom font row becomes rows 13-14; row 15 stays blank. */
-    CHECK(d72x40_tall_column(0x40) == 0x6000);
-    CHECK(d72x40_tall_column(0x7f) == 0x7ffe);
-}
-
-static void test_layer_wide_and_centred(void) {
-    struct frame f;
-    frame_init(&f, 72, 5);
-    struct d72x40_status st = split_status();
-    strcpy(st.layer, "NUM");
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "NUM");
-
-    int first, last;
-    CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
-    /* Three wide glyphs are 34 columns, centred in 72. */
-    CHECK(first == 19);
-    CHECK(last == 52);
-    CHECK(row_blank(&f.cv, 0));
-    CHECK(row_blank(&f.cv, 15));
-    /* N's left stroke fills the band at double width. */
-    for (int y = 1; y <= 14; y++) {
-        CHECK(pixel(&f.cv, 19, y));
-        CHECK(pixel(&f.cv, 20, y));
-        CHECK(!pixel(&f.cv, 18, y));
-    }
-}
-
-static void test_layer_narrow_when_wide_does_not_fit(void) {
-    struct frame f;
-    frame_init(&f, 72, 5);
-    struct d72x40_status st = split_status();
-
-    strcpy(st.layer, "USER-A");
-    d72x40_render(&f.cv, &st);
-    int first, last;
-    CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
-    /* Six wide glyphs still fit: 70 columns. */
-    CHECK(first == 1);
-    CHECK(last == 70);
-
-    /* Too long for double size: one ordinary line, centred in the block. */
-    strcpy(st.layer, "TEMP-SCROLL");
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "TEMP-SCROLL");
-    CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
-    /* Eleven ordinary glyphs are 65 columns. */
-    CHECK(first == 3);
-    CHECK(last == 67);
-    /* Rows 4 to 10 of the sixteen-row block, and nothing outside them. */
-    for (int y = 0; y < 16; y++) {
-        CHECK(row_blank(&f.cv, y) == (y < 4 || y > 10));
-    }
-
-    /* Too long for one line: two ordinary lines, split at the hyphen. */
-    strcpy(st.layer, "TEMP-SCROLLING");
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "wrapped at the hyphen");
-    CHECK(page_is(&f.cv, 0, 21, "TEMP-", 0, NULL));
-    CHECK(page_is(&f.cv, 1, 9, "SCROLLING", 0, NULL));
-
-    /* With no hyphen to split at, the break comes where the line ends. */
-    strcpy(st.layer, "ABCDEFGHIJKLMNOPQRST");
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "wrapped and cut");
-    CHECK(page_is(&f.cv, 0, 0, "ABCDEFGHIJKL", 0, NULL));
-    CHECK(page_is(&f.cv, 1, 12, "MNOPQRST", 0, NULL));
-}
-
-static void test_layer_on_other_panels(void) {
-    struct frame f;
-    struct d72x40_status st = split_status();
-    int first, last;
-
-    strcpy(st.layer, "ABCDEFGHIJ");
-    frame_init(&f, 128, 4);
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "128x32");
-    CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
-    /* Ten wide glyphs fit in 128: 118 columns. */
-    CHECK(first == 5);
-    CHECK(last == 122);
-
-    strcpy(st.layer, "NUM");
-    frame_init(&f, 72, 1);
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 0, 27, "NUM", 0, NULL));
-
-    st.layer[0] = '\0';
-    frame_init(&f, 72, 5);
-    d72x40_render(&f.cv, &st);
-    CHECK(row_blank(&f.cv, 5));
-    CHECK(!lit_extent(&f.cv, 0, 15, &first, &last));
-}
-
-static void test_output_line(void) {
-    struct frame f;
-    frame_init(&f, 72, 5);
-    struct d72x40_status st = split_status();
-
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "BASE, BLE 1 connected");
-    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_BLUETOOTH "1 " D72X40_SYM_CHECK, 0, NULL));
-
-    st.link = D72X40_LINK_DOWN;
-    st.profile = 3;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_BLUETOOTH "3 " D72X40_SYM_CROSS, 0, NULL));
-
-    st.link = D72X40_LINK_OPEN;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_BLUETOOTH "3 " D72X40_SYM_OPEN, 0, NULL));
-
-    st.transport = D72X40_TRANSPORT_USB;
-    st.link = D72X40_LINK_UP;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, "USB", 0, NULL));
-
-    st.link = D72X40_LINK_DOWN;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, "USB " D72X40_SYM_CROSS, 0, NULL));
-
-    st.transport = D72X40_TRANSPORT_NONE;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, D72X40_SYM_CROSS, 0, NULL));
-
-    st.transport = D72X40_TRANSPORT_BLE;
-    st.link = D72X40_LINK_UP;
-    st.profile = 1;
-    st.studio_lock_available = true;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "Studio locked");
-    CHECK(studio_mark_is(&f.cv, 2, false));
-
-    st.unlocked = true;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "Studio unlocked");
-    CHECK(studio_mark_is(&f.cv, 2, true));
-}
-
-static void test_battery_line(void) {
-    struct frame f;
-    frame_init(&f, 72, 5);
-    struct d72x40_status st = split_status();
-
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L 85%", 43, "R 72%"));
-
-    st.peer_battery = D72X40_BATTERY_UNKNOWN;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L 85%", 49, "R --"));
-
-    st.charging = true;
-    st.battery = 100;
-    st.peer_battery = 72;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "charging");
-    CHECK(page_is(&f.cv, 3, 0, "L100%" D72X40_SYM_BOLT, 43, "R 72%"));
-
-    /* Both full: the spaces go so a cell still separates the halves. */
-    st.peer_battery = 100;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L100%" D72X40_SYM_BOLT, 43, "R100%"));
-    st.charging = false;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "both full");
-    CHECK(page_is(&f.cv, 3, 0, "L100%", 37, "R 100%"));
-
-    /* Values above 100 are clamped. */
-    st.battery = 180;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L100%", 37, "R 100%"));
-
-    /* The peripheral on external power gets a bolt of its own. */
-    st.charging = false;
-    st.battery = 85;
-    st.peer_battery = 72;
-    st.peer_charging = true;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "peripheral charging");
-    CHECK(page_is(&f.cv, 3, 0, "L 85%", 37, "R 72%" D72X40_SYM_BOLT));
-
-    /* Both charging and both full: no space left to drop, so a line each. */
-    st.charging = true;
-    st.battery = 100;
-    st.peer_battery = 100;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "both charging and full");
-    CHECK(page_is(&f.cv, 3, 0, "L 100%" D72X40_SYM_BOLT, 0, NULL));
-    CHECK(page_is(&f.cv, 4, 0, "R 100%" D72X40_SYM_BOLT, 0, NULL));
-
-    /* One space is enough to keep them side by side. */
-    st.peer_charging = false;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "L100%" D72X40_SYM_BOLT, 43, "R100%"));
-    st.charging = false;
-    st.peer_charging = false;
-    st.battery = 85;
-    st.peer_battery = 72;
-
-    /* A central without a battery of its own shows only the peripheral's. */
-    st.battery = D72X40_BATTERY_HIDDEN;
-    st.peer_battery = 40;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, NULL, 43, "R 40%"));
-
-    /* A unibody. */
-    st.battery = 9;
-    st.peer_battery = D72X40_BATTERY_HIDDEN;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "BAT 9%", 0, NULL));
-    st.charging = true;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, "BAT 9%" D72X40_SYM_BOLT, 0, NULL));
-    st.battery = D72X40_BATTERY_HIDDEN;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 3, 0, NULL, 0, NULL));
-}
-
-static void test_indicator_line(void) {
-    struct frame f;
-    frame_init(&f, 72, 5);
-    struct d72x40_status st = split_status();
-
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 4, 0, NULL, 0, NULL));
-    st.caps_lock = true;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "caps lock");
-    CHECK(page_is(&f.cv, 4, 0, "CAPS", 0, NULL));
-
-    /* A four-page panel has no indicator line and draws nothing past it. */
-    frame_init(&f, 72, 4);
-    memset(f.buf, 0, sizeof(f.buf));
-    d72x40_render(&f.cv, &st);
-    for (size_t i = 4u * 72u; i < sizeof(f.buf); i++) {
-        CHECK(f.buf[i] == 0);
-    }
-}
-
-/* A 72x40 panel turned on its side: 40 columns, nine pages. */
-static void test_portrait_layout(void) {
-    struct frame f;
-    frame_init(&f, 40, 9);
-    struct d72x40_status st = split_status();
-
-    st.caps_lock = true;
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "portrait 40x72");
-
-    int first, last;
-
-    /* Four narrow-tall glyphs are 23 columns, centred in 40. */
-    CHECK(lit_extent(&f.cv, 0, 15, &first, &last));
-    CHECK(first == 8);
-    CHECK(last == 30);
-    /* Nine pages for six lines: a blank line between the groups. */
-    CHECK(page_is(&f.cv, 2, 0, NULL, 0, NULL));
-    CHECK(page_is(&f.cv, 3, 0, D72X40_SYM_BLUETOOTH "1 " D72X40_SYM_CHECK, 0, NULL));
-    CHECK(page_is(&f.cv, 4, 0, NULL, 0, NULL));
-    /* Too narrow for both halves side by side: one line each. */
-    CHECK(page_is(&f.cv, 5, 0, "L 85%", 0, NULL));
-    CHECK(page_is(&f.cv, 6, 0, "R 72%", 0, NULL));
-    CHECK(page_is(&f.cv, 7, 0, NULL, 0, NULL));
-    CHECK(page_is(&f.cv, 8, 0, "CAPS", 0, NULL));
-
-    /* At 100%, the bolt stays after the complete number and still fits. */
-    st.battery = 100;
-    st.peer_battery = 100;
-    st.charging = true;
-    st.peer_charging = true;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 5, 0, "L100%" D72X40_SYM_BOLT, 0, NULL));
-    CHECK(page_is(&f.cv, 6, 0, "R100%" D72X40_SYM_BOLT, 0, NULL));
-
-    st.peer_battery = D72X40_BATTERY_HIDDEN;
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 5, 0, "B100%" D72X40_SYM_BOLT, 0, NULL));
-
-    /* A name too long for 40 columns takes two lines. */
-    strcpy(st.layer, "TEMP-SCROLL");
-    d72x40_render(&f.cv, &st);
-    dump(&f.cv, "portrait, wrapped");
-    CHECK(page_is(&f.cv, 0, 5, "TEMP-", 0, NULL));
-    CHECK(page_is(&f.cv, 1, 2, "SCROLL", 0, NULL));
-}
-
-static void test_portrait_studio_lock(void) {
-    struct frame f;
-    frame_init(&f, 40, 9);
-    struct d72x40_status st = split_status();
-    st.studio_lock_available = true;
-    st.caps_lock = true;
-
-    d72x40_render(&f.cv, &st);
-    CHECK(page_is(&f.cv, 2, 0, NULL, 0, NULL));
-    CHECK(pixel(&f.cv, 30, 25)); /* closed shackle, left side */
-    CHECK(!pixel(&f.cv, 39, 25));
-    CHECK(pixel(&f.cv, 28, 28)); /* body remains in place */
-    CHECK(page_is(&f.cv, 5, 0, "L 85%", 0, NULL));
-    CHECK(page_is(&f.cv, 6, 0, "R 72%", 0, NULL));
-    CHECK(page_is(&f.cv, 8, 0, "CAPS", 0, NULL));
-
-    st.unlocked = true;
-    d72x40_render(&f.cv, &st);
-    CHECK(!pixel(&f.cv, 30, 25));
-    CHECK(pixel(&f.cv, 39, 25)); /* shackle swings right */
-    CHECK(!pixel(&f.cv, 39, 27)); /* visible gap above body */
-    CHECK(pixel(&f.cv, 28, 28));
-}
-
-static int count_lit(const struct d72x40_canvas *cv) {
-    int lit = 0;
-
-    for (int y = 0; y < cv->pages * D72X40_PAGE_HEIGHT; y++) {
-        for (int x = 0; x < cv->width; x++) {
-            lit += pixel(cv, x, y);
-        }
-    }
-    return lit;
-}
-
-static void test_rotation(void) {
-    struct frame canvas;
-    struct frame panel;
-
-    /* The drawing for a 72x40 panel turned on its side. */
-    frame_init(&canvas, 40, 9);
-    frame_init(&panel, 72, 5);
-    canvas.buf[0] = 1; /* canvas pixel (0, 0) */
-
-    d72x40_project(&canvas.cv, panel.buf, 72, 5, 90);
-    /* Counter-clockwise: the canvas's top-left corner goes bottom-left. */
-    CHECK(pixel(&panel.cv, 0, 39));
-    CHECK(count_lit(&panel.cv) == 1);
-
-    d72x40_project(&canvas.cv, panel.buf, 72, 5, 270);
-    /* Clockwise: it goes top-right. */
-    CHECK(pixel(&panel.cv, 71, 0));
-    CHECK(count_lit(&panel.cv) == 1);
-
-    /* The canvas's bottom-right corner is the other corner each way. */
-    memset(canvas.buf, 0, sizeof(canvas.buf));
-    canvas.buf[8 * 40 + 39] = 1u << 7; /* canvas pixel (39, 71) */
-    d72x40_project(&canvas.cv, panel.buf, 72, 5, 90);
-    CHECK(pixel(&panel.cv, 71, 0));
-    d72x40_project(&canvas.cv, panel.buf, 72, 5, 270);
-    CHECK(pixel(&panel.cv, 0, 39));
-
-    /* Turning keeps every pixel, and a whole status survives the turn. */
-    struct d72x40_status st = split_status();
-
-    strcpy(st.layer, "NUM");
-    d72x40_render(&canvas.cv, &st);
-
-    int drawn = count_lit(&canvas.cv);
-
-    d72x40_project(&canvas.cv, panel.buf, 72, 5, 90);
-    dump(&panel.cv, "portrait status turned onto the panel");
-    CHECK(count_lit(&panel.cv) == drawn);
-    for (int y = 0; y < 72; y++) {
+/* Independent glyph pixels at the approved normal-value group anchors. */
+static void check_status_line(const struct d72x40_canvas *cv, int row, int x0,
+                              const char *text) {
+    for (int y = 0; y < 10; y++) {
         for (int x = 0; x < 40; x++) {
-            /* (x, y) of the canvas is (y, 39 - x) of the panel. */
-            CHECK(pixel(&canvas.cv, x, y) == pixel(&panel.cv, y, 39 - x));
+            bool expected = false;
+            int at = x0;
+            for (size_t i = 0; text[i] != 0; i++) {
+                unsigned index = (unsigned char)text[i] - 32u;
+                if (x >= at && x < at + 8) {
+                    expected |= (((unsigned)d72x40_status_rows[index][y] >>
+                                  (7 - (x - at))) & 1u) != 0;
+                }
+                at += d72x40_status_advance[index];
+            }
+            CHECK(pixel(cv, x, row + y) == expected);
         }
     }
-
-    /* Half a turn, on a canvas the panel's own way round. */
-    struct frame flat;
-
-    frame_init(&flat, 72, 5);
-    d72x40_render(&flat.cv, &st);
-    drawn = count_lit(&flat.cv);
-    d72x40_project(&flat.cv, panel.buf, 72, 5, 180);
-    CHECK(count_lit(&panel.cv) == drawn);
-    CHECK(pixel(&flat.cv, 3, 4) == pixel(&panel.cv, 68, 35));
-
-    /* No turn at all is a copy. */
-    d72x40_project(&flat.cv, panel.buf, 72, 5, 0);
-    CHECK(memcmp(flat.buf, panel.buf, 72 * 5) == 0);
+}
+static void test_normal_led_content(void) {
+    struct frame f;
+    frame_init(&f);
+    memset(f.buf, 0xff, sizeof(f.buf));
+    d72x40_render_led_splash(&f.cv, 5, 60, 150);
+    CHECK(pixel(&f.cv, 0, 0) && pixel(&f.cv, 39, 12));
+    check_status_line(&f.cv, 16, 14, "P5");
+    check_status_line(&f.cv, 27, 4, "TRIPLE");
+    check_status_line(&f.cv, 40, 8, "B60%");
+    check_status_line(&f.cv, 56, 7, "S150%");
+    const int blank_rows[] = {13, 15, 37, 50, 66};
+    for (size_t i = 0; i < sizeof(blank_rows)/sizeof(blank_rows[0]); i++) {
+        for (int x = 0; x < 40; x++) CHECK(!pixel(&f.cv, x, blank_rows[i]));
+    }
+    guarded(&f);
 }
 
-static void test_render_is_a_pure_function(void) {
-    struct frame a, b;
-    frame_init(&a, 72, 5);
-    frame_init(&b, 72, 5);
-    memset(b.buf, 0xa5, 72 * 5);
-    struct d72x40_status st = split_status();
-    st.unlocked = true;
-    st.caps_lock = true;
-    d72x40_render(&a.cv, &st);
-    d72x40_render(&b.cv, &st);
-    CHECK(memcmp(a.buf, b.buf, sizeof(a.buf)) == 0);
+static void test_state_and_bounds(void) {
+    struct frame a,b; frame_init(&a); frame_init(&b);
+    struct d72x40_status st={.battery=D72X40_BATTERY_HIDDEN,.peer_battery=D72X40_BATTERY_HIDDEN};
+    strcpy(st.layer,"BASE"); d72x40_render(&a.cv,&st); memset(b.buf,0xff,360); d72x40_render(&b.cv,&st);
+    CHECK(memcmp(a.buf,b.buf,360)==0);
+    for(int y=13;y<72;y++) for(int x=0;x<40;x++) CHECK(!pixel(&a.cv,x,y));
+    st.caps_lock=true; d72x40_render(&b.cv,&st); CHECK(memcmp(a.buf,b.buf,360)!=0);
+    d72x40_render(&a.cv,&st); CHECK(memcmp(a.buf,b.buf,360)==0);
+    const uint8_t levels[]={0,100,101,UINT8_MAX,D72X40_BATTERY_UNKNOWN,D72X40_BATTERY_HIDDEN};
+    for(size_t i=0;i<6;i++) {st.battery=levels[i];st.peer_battery=levels[5-i];st.charging=true;st.peer_charging=true;st.profile=i%2?99:100;st.ble_available=true;d72x40_render(&a.cv,&st);guarded(&a);}
+    st.layer[0]=0; d72x40_render(&a.cv,&st); guarded(&a);
+    for(int x=-1;x<=40;x++) for(int y=-1;y<=72;y++) {
+        bool expected=x>=0&&x<40&&y>=0&&y<72 ? pixel(&a.cv,x,y):false;
+        CHECK(d72x40_canvas_pixel(&a.cv,x,y)==expected);
+    }
+    char text[4]=""; d72x40_append(text,sizeof(text),"ABCDE"); CHECK(strcmp(text,"ABC")==0);
+    d72x40_append(text,sizeof(text),"Z"); CHECK(strcmp(text,"ABC")==0);
+    char empty[1]=""; d72x40_append(empty,sizeof(empty),"A"); CHECK(empty[0]==0);
+    char num[8]=""; d72x40_append_u8(num,sizeof(num),0); CHECK(strcmp(num,"0")==0);
+    num[0]=0; d72x40_append_u16(num,sizeof(num),0); CHECK(strcmp(num,"0")==0);
+    num[0]=0; d72x40_append_u16(num,sizeof(num),65535); CHECK(strcmp(num,"65535")==0);
+    d72x40_render_led_splash(&a.cv,255,0,0); guarded(&a);
 }
-
 struct span_list {
     struct d72x40_span spans[64];
     size_t count;
@@ -591,6 +211,13 @@ static void test_spans(void) {
 
     collect(want, shown, 72, 5, 0x1f, &list);
     CHECK(list.count == 0);
+
+    /* A run beginning at column zero includes its adjacent change. */
+    want[0] = 1;
+    want[1] = 1;
+    collect(want, shown, 72, 5, 0x1f, &list);
+    CHECK(list.count == 1 && span_is(&list.spans[0], 0, 0, 1));
+    memset(want, 0, sizeof(want));
 
     /* Unknown pages go whole, in order. */
     collect(want, shown, 72, 5, 0x00, &list);
@@ -650,96 +277,184 @@ static size_t flush(const uint8_t *want, uint8_t *shown, uint16_t width, uint16_
     return bytes;
 }
 
+
 static void test_redraw_costs(void) {
-    struct frame want, shown;
-    frame_init(&want, 72, 5);
-    frame_init(&shown, 72, 5);
-    uint32_t valid = 0;
-    struct d72x40_status st = split_status();
-
-    d72x40_render(&want.cv, &st);
-    CHECK(flush(want.buf, shown.buf, 72, 5, &valid) == 72u * 5u);
-    CHECK(valid == 0x1f);
-    CHECK(memcmp(want.buf, shown.buf, 72 * 5) == 0);
-
-    /* Nothing changed: nothing sent. */
-    d72x40_render(&want.cv, &st);
-    CHECK(flush(want.buf, shown.buf, 72, 5, &valid) == 0);
-
-    /* One battery digit: a glyph's worth of columns. */
-    st.peer_battery = 71;
-    d72x40_render(&want.cv, &st);
-    size_t digit = flush(want.buf, shown.buf, 72, 5, &valid);
-    CHECK(digit > 0 && digit <= (size_t)D72X40_FONT_WIDTH);
-    CHECK(memcmp(want.buf, shown.buf, 72 * 5) == 0);
-
-    /* A layer change stays within the two layer pages. */
-    struct frame before;
-    frame_init(&before, 72, 5);
-    memcpy(before.buf, shown.buf, sizeof(before.buf));
-    strcpy(st.layer, "NUM");
-    d72x40_render(&want.cv, &st);
-    size_t layer = flush(want.buf, shown.buf, 72, 5, &valid);
-    CHECK(layer > 0 && layer <= 2u * 72u);
-    CHECK(memcmp(&before.buf[2 * 72], &shown.buf[2 * 72], 3 * 72) == 0);
+    struct frame want,shown,before; frame_init(&want);frame_init(&shown);frame_init(&before);
+    struct d72x40_status st=approved_status(&d72x40_approved_frames[0]);uint32_t valid=0;
+    d72x40_render(&want.cv,&st);CHECK(flush(want.buf,shown.buf,72,5,&valid)==360);CHECK(valid==0x1f);
+    d72x40_render(&want.cv,&st);CHECK(flush(want.buf,shown.buf,72,5,&valid)==0);
+    st.peer_battery=71;d72x40_render(&want.cv,&st);size_t sent=flush(want.buf,shown.buf,72,5,&valid);CHECK(sent>0&&sent<360);
+    memcpy(before.buf,shown.buf,360);strcpy(st.layer,"NUM");d72x40_render(&want.cv,&st);
+    sent=flush(want.buf,shown.buf,72,5,&valid);CHECK(sent>0&&sent<=65);
+    for(size_t p=0;p<5;p++) CHECK(memcmp(before.buf+p*72+13,shown.buf+p*72+13,59)==0);
+    CHECK(memcmp(want.buf,shown.buf,360)==0);
+}
+static void test_cached_rendering(void) {
+    struct frame a, b, reference;
+    frame_init(&a); frame_init(&b); frame_init(&reference);
+    struct d72x40_render_cache ca = {0}, cb = {0};
+    struct d72x40_status st = approved_status(&d72x40_approved_frames[0]);
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st));
+    CHECK(!d72x40_render_cached(&a.cv, &ca, &st));
+    CHECK(d72x40_render_cached(&b.cv, &cb, &st));
+    CHECK(memcmp(a.buf, b.buf, 360) == 0);
+    /* Every status field must invalidate, even fields conservatively retained. */
+#define CHANGE(field, value) do { \
+    st.field = (value); \
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st)); \
+    CHECK(!d72x40_render_cached(&a.cv, &ca, &st)); \
+    d72x40_render(&reference.cv, &st); \
+    CHECK(memcmp(a.buf, reference.buf, 360) == 0); \
+} while (0)
+    CHANGE(layer[0], 'X'); CHANGE(transport, 1); CHANGE(link, 1);
+    CHANGE(profile, 255); CHANGE(battery, 0); CHANGE(peer_battery, 100);
+    CHANGE(charging, !st.charging); CHANGE(peer_charging, !st.peer_charging);
+    CHANGE(caps_lock, !st.caps_lock); CHANGE(studio_lock_available, !st.studio_lock_available);
+    CHANGE(unlocked, !st.unlocked); CHANGE(messenger_lock_available, !st.messenger_lock_available);
+    CHANGE(messenger_unlocked, !st.messenger_unlocked);
+    CHANGE(ble_available, !st.ble_available); CHANGE(usb_available, !st.usb_available);
+    CHANGE(ble_link, 255); CHANGE(usb_link, 255);
+#undef CHANGE
+    CHECK(memcmp(a.buf, b.buf, 360) != 0);
+    CHECK(!d72x40_render_cached(&b.cv, &cb, &cb.last.status));
+    for (unsigned i = 0; i < 8; i++) {
+        uint8_t pattern = i & 1u ? UINT8_MAX : 0;
+        uint8_t brightness = i & 2u ? UINT8_MAX : 0;
+        uint16_t speed = i & 4u ? UINT16_MAX : 0;
+        CHECK(d72x40_render_led_cached(&a.cv, &ca, pattern, brightness, speed));
+        CHECK(!d72x40_render_led_cached(&a.cv, &ca, pattern, brightness, speed));
+        d72x40_render_led_splash(&reference.cv, pattern, brightness, speed);
+        CHECK(memcmp(a.buf, reference.buf, 360) == 0);
+    }
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st)); /* LED expiry restores status. */
+    CHECK(!d72x40_render_cached(&a.cv, &ca, &st));
+    CHECK(d72x40_render_led_cached(&a.cv, &ca, 255, 255, 65535)); /* Same tuple, new mode. */
+    memset(&ca, 0, sizeof(ca)); memset(a.buf, 0, sizeof(a.buf));
+    CHECK(d72x40_render_led_cached(&a.cv, &ca, 255, 255, 65535));
+    CHECK(memcmp(a.buf, reference.buf, 360) == 0);
+    memset(&ca, 0, sizeof(ca));
+    CHECK(d72x40_render_cached(&a.cv, &ca, &st));
+    guarded(&a); guarded(&b); guarded(&reference);
 }
 
-static void test_led_splash(void) {
-    struct frame portrait;
-    frame_init(&portrait, 40, 9);
-    for (uint8_t pattern = 0; pattern < 18; pattern++) {
-        CHECK(strlen(d72x40_led_pattern_name(pattern)) <= 6);
-        d72x40_render_led_splash(&portrait.cv, pattern, 100, 400);
-        int first;
-        int last;
-        CHECK(lit_extent(&portrait.cv, 0, 7, &first, &last));
-        CHECK(lit_extent(&portrait.cv, 16, 31, &first, &last));
-        CHECK(lit_extent(&portrait.cv, 40, 47, &first, &last));
-        CHECK(lit_extent(&portrait.cv, 56, 63, &first, &last));
-        CHECK(last < 40);
+/* Independent logical-column expectations preserve every original symbol. */
+static const uint8_t symbol_columns[D72X40_FONT_SYMBOL_COUNT][D72X40_FONT_WIDTH] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00}, /* 0x00 blank */
+    {0x10, 0x20, 0x10, 0x08, 0x06}, /* 0x01 check */
+    {0x22, 0x14, 0x08, 0x14, 0x22}, /* 0x02 cross */
+    {0x1c, 0x22, 0x22, 0x22, 0x1c}, /* 0x03 open (a profile with no bond) */
+    {0x22, 0x14, 0x7f, 0x2a, 0x14}, /* 0x04 bluetooth */
+    {0x08, 0x6c, 0x3e, 0x1b, 0x08}, /* 0x05 bolt (charging) */
+    {0x7e, 0x79, 0x49, 0x79, 0x7a}, /* 0x06 unlocked padlock */
+};
+
+static void test_direct_symbols_and_numbers(void) {
+    struct frame f; uint8_t expected[360];
+    for (unsigned code = 0; code <= 255; code++) {
+        for (int x = -9; x <= 40; x++) for (int y = -1; y <= 72; y++) {
+            frame_init(&f); memset(expected, 0, sizeof(expected));
+            d72x40_symbol(&f.cv, x, y, code);
+            if (code < 7 && y >= 0 && y < 72)
+                for (int col = 0; col < 5; col++) for (int row = 0; row < 7; row++)
+                    ink(expected, x + col, y + row,
+                        ((symbol_columns[code][col] >> row) & 1u) != 0, false);
+            CHECK(memcmp(f.buf, expected, 360) == 0); guarded(&f);
+        }
     }
-    CHECK(strcmp(d72x40_led_pattern_name(255), "?") == 0);
+    d72x40_symbol(&f.cv, INT_MIN, INT_MAX, UINT_MAX); guarded(&f);
+    CHECK(d72x40_link_symbol(D72X40_LINK_UP) == 1);
+    CHECK(d72x40_link_symbol(D72X40_LINK_OPEN) == 0);
+    CHECK(d72x40_link_symbol(D72X40_LINK_DOWN) == 2);
+    CHECK(d72x40_link_symbol(255) == 2);
+    for (unsigned value = 0; value <= UINT16_MAX; value++) {
+        char expected_num[8];
+        (void)snprintf(expected_num, sizeof(expected_num), "%u", value);
+        for (size_t cap = 1; cap <= sizeof(expected_num); cap++) {
+            char actual[8] = "";
+            d72x40_append_u16(actual, cap, (uint16_t)value);
+            size_t length = strlen(expected_num);
+            size_t kept = length < cap - 1 ? length : cap - 1;
+            CHECK(strlen(actual) == kept && memcmp(actual, expected_num, kept) == 0);
+            if (value <= UINT8_MAX) {
+                actual[0] = 0; d72x40_append_u8(actual, cap, (uint8_t)value);
+                CHECK(strlen(actual) == kept && memcmp(actual, expected_num, kept) == 0);
+            }
+        }
+    }
+}
 
-    uint8_t before[MAX_WIDTH * MAX_PAGES];
-    memcpy(before, portrait.buf, sizeof(before));
-    d72x40_render_led_splash(&portrait.cv, 17, 0, 10);
-    CHECK(memcmp(before, portrait.buf, sizeof(before)) != 0);
-
-    struct frame landscape;
-    frame_init(&landscape, 72, 5);
-    d72x40_render_led_splash(&landscape.cv, 12, 80, 120);
-    for (int page = 0; page < 5; page++) {
-        int first;
-        int last;
-        CHECK(lit_extent(&landscape.cv, page * 8, page * 8 + 7, &first, &last));
-        CHECK(last < 72);
+static void test_incremental_transitions(void) {
+    struct frame actual, reference;
+    for (size_t from = 0; from < 24; from++) for (size_t to = 0; to < 24; to++) {
+        frame_init(&actual); frame_init(&reference);
+        struct d72x40_render_cache cache = {0};
+        struct d72x40_status before = approved_status(&d72x40_approved_frames[from]);
+        struct d72x40_status after = approved_status(&d72x40_approved_frames[to]);
+        CHECK(d72x40_render_cached(&actual.cv, &cache, &before));
+        (void)d72x40_render_cached(&actual.cv, &cache, &after);
+        d72x40_render(&reference.cv, &after);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0); guarded(&actual);
+    }
+    struct d72x40_status before = approved_status(&d72x40_approved_frames[0]);
+    CHECK(d72x40_status_changes(&before, &before) == 0);
+#define GROUP(field, value, expected) do { \
+    struct d72x40_status after = before; after.field = (value); \
+    CHECK(d72x40_status_changes(&before, &after) == (unsigned)(expected)); \
+} while (0)
+    GROUP(layer[0], 'X', D72X40_GROUP_HEADER);
+    GROUP(profile, 255, D72X40_GROUP_CONNECTIONS);
+    GROUP(ble_available, !before.ble_available, D72X40_GROUP_CONNECTIONS);
+    GROUP(usb_available, !before.usb_available, D72X40_GROUP_CONNECTIONS);
+    GROUP(ble_link, 255, D72X40_GROUP_CONNECTIONS);
+    GROUP(usb_link, 255, D72X40_GROUP_CONNECTIONS);
+    GROUP(caps_lock, !before.caps_lock, D72X40_GROUP_CAPS);
+    GROUP(battery, 0, D72X40_GROUP_BATTERY);
+    GROUP(charging, !before.charging, D72X40_GROUP_BATTERY);
+    GROUP(peer_battery, 100, D72X40_GROUP_PEER_BATTERY);
+    GROUP(peer_charging, !before.peer_charging, D72X40_GROUP_PEER_BATTERY);
+    GROUP(peer_battery, D72X40_BATTERY_HIDDEN, D72X40_GROUP_BATTERY | D72X40_GROUP_PEER_BATTERY);
+    GROUP(studio_lock_available, !before.studio_lock_available, D72X40_GROUP_LOCKS);
+    GROUP(unlocked, !before.unlocked, D72X40_GROUP_LOCKS);
+    GROUP(messenger_lock_available, !before.messenger_lock_available, D72X40_GROUP_LOCKS);
+    GROUP(messenger_unlocked, !before.messenger_unlocked, D72X40_GROUP_LOCKS);
+    GROUP(transport, 1, 0); GROUP(link, 1, 0);
+#undef GROUP
+    for (unsigned mask = 0; mask <= D72X40_GROUP_ALL; mask++) {
+        frame_init(&actual); frame_init(&reference);
+        struct d72x40_render_cache cache = {0};
+        struct d72x40_status after = before;
+        if (mask & D72X40_GROUP_HEADER) strcpy(after.layer, "NUM");
+        if (mask & D72X40_GROUP_CONNECTIONS) {after.profile = 255; after.ble_available = false; after.usb_available = false;}
+        if (mask & D72X40_GROUP_CAPS) after.caps_lock = !before.caps_lock;
+        if (mask & D72X40_GROUP_BATTERY) after.battery = D72X40_BATTERY_HIDDEN;
+        if (mask & D72X40_GROUP_PEER_BATTERY) after.peer_battery = D72X40_BATTERY_HIDDEN;
+        if (mask & D72X40_GROUP_LOCKS) {after.studio_lock_available = false; after.messenger_lock_available = false;}
+        (void)d72x40_render_cached(&actual.cv, &cache, &before);
+        (void)d72x40_render_cached(&actual.cv, &cache, &after);
+        d72x40_render(&reference.cv, &after);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0);
+        (void)d72x40_render_cached(&actual.cv, &cache, &before);
+        d72x40_render(&reference.cv, &before);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0); guarded(&actual);
+    }
+    for (unsigned from = 0; from < 8; from++) for (unsigned to = 0; to < 8; to++) {
+        frame_init(&actual); frame_init(&reference);
+        struct d72x40_render_cache cache = {0};
+        (void)d72x40_render_led_cached(&actual.cv, &cache, from & 1u ? 255 : 5,
+                                     from & 2u ? 255 : 60, from & 4u ? 65535 : 150);
+        uint8_t pattern = to & 1u ? 255 : 5;
+        uint8_t brightness = to & 2u ? 255 : 60;
+        uint16_t speed = to & 4u ? 65535 : 150;
+        (void)d72x40_render_led_cached(&actual.cv, &cache, pattern, brightness, speed);
+        d72x40_render_led_splash(&reference.cv, pattern, brightness, speed);
+        CHECK(memcmp(actual.buf, reference.buf, 360) == 0); guarded(&actual);
     }
 }
 
 int main(void) {
-    test_font();
-    test_text_width();
-    test_tall_column();
-    test_layer_wide_and_centred();
-    test_layer_narrow_when_wide_does_not_fit();
-    test_layer_on_other_panels();
-    test_portrait_layout();
-    test_portrait_studio_lock();
-    test_rotation();
-    test_output_line();
-    test_battery_line();
-    test_indicator_line();
-    test_render_is_a_pure_function();
-    test_spans();
-    test_redraw_costs();
-    test_led_splash();
-
-    if (failures != 0) {
-        fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-
-    printf("display_72x40_core: all checks passed\n");
-
-    return EXIT_SUCCESS;
+    test_approved_frames();test_bitmap_edges();test_status_font_and_locks();
+    test_normal_led_content();test_state_and_bounds();test_spans();test_redraw_costs();
+    test_cached_rendering();test_direct_symbols_and_numbers();test_incremental_transitions();
+    if(failures){fprintf(stderr,"%d checks failed\n",failures);return EXIT_FAILURE;}
+    puts("display_72x40_core: all fixed-panel checks passed");return EXIT_SUCCESS;
 }

@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -48,3 +49,31 @@ void zmk_display_72x40_set_contrast(uint8_t contrast);
 
 /** Set LED-change splash duration (0 disables it; maximum 10000 ms). */
 void zmk_display_72x40_set_led_splash_ms(uint32_t ms);
+
+/** Plain state for the second service lock; meaningful only when available. */
+struct zmk_display_72x40_lock_status {
+    bool available;
+    bool unlocked;
+};
+
+/**
+ * Optional source of the second lock. The default reports unavailable.
+ * A provider supplies one strong definition and must return without blocking.
+ * The display reads it when drawing; it stores no copy of the producer's state.
+ */
+struct zmk_display_72x40_lock_status zmk_display_72x40_get_external_lock_status(void);
+
+/**
+ * Invalidate status from any thread. Queues the existing redraw without
+ * resetting activity, waking a dark panel or writing to the bus in the caller.
+ */
+void zmk_display_72x40_status_changed(void);
+
+/**
+ * Show numeric LED settings using the existing overlay/wake/expiry policy.
+ * Pattern IDs follow the display's documented names; speed is a 16-bit percent.
+ * Numeric values are published and read as one atomic tuple. No producer
+ * header is needed. Ignored before init, while disabled, or when
+ * CONFIG_ZMK_DISPLAY_72X40_LED_SPLASH is off.
+ */
+void zmk_display_72x40_show_led_settings(uint8_t pattern, uint8_t brightness, uint16_t speed);

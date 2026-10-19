@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "host": [
+    "bash",
+    "tests/run-docker.sh"
+  ],
+  "contracts": [
+    {
+      "fixture": "tests/test_display_72x40_core.c",
+      "asserts": "Fixed 72x40 physical frame:24 independent pixel goldens +67 pre-refactor frame checksums; all byte glyph codes, clip/erase/lock and page edges, invalid/extreme coordinates, missing features, independent state, ordered differential spans and header-only redraw; exact-state caches preserve all fields, view changes/reset/independent state, direct symbol pixels, every16-bit number across capacities1..8;576 approved transitions,64 status group combinations in both directions,64 LED tuple transitions, exact field/group mapping and peer-label coupling"
+    },
+    {
+      "fixture": "tests/test_display_72x40_splash.c",
+      "asserts": "Splash state and timing"
+    },
+    {
+      "fixture": "tests/runtime/full_harness.c",
+      "asserts": "Status binding, exclusive selected HID route/fallback/profile behavior; stale quiet disable/activity interleavings, splash uptime wrap and new tuple publication during old expiry; test_quiet_setter_ordering preserves a newer positive timeout and finite timer after an older zero-timeout setter resumes; sync peer timestamp0/window/max-to0 keeps report admission and forbids a premature bus write"
+    },
+    {
+      "fixture": "tests/runtime/power_harness.c",
+      "asserts": "Blank/wake policy"
+    },
+    {
+      "fixture": "tests/runtime/settings_harness.c",
+      "asserts": "Initial values, clamps, invalid/read failures, unrelated-event isolation; actual callbacks with controlled registry/pthread kernel stand-ins preserve newer values across an older paused read"
+    },
+    {
+      "fixture": "tests/runtime/status_harness.c",
+      "asserts": "Unavailable default lock provider"
+    },
+    {
+      "fixture": "tests/runtime/messenger_harness.c",
+      "asserts": "Optional public getter and invalidation adapter"
+    },
+    {
+      "fixture": "tests/runtime/led_patterns_harness.c",
+      "asserts": "Exact numeric tuple forwarding and unrelated-event isolation"
+    },
+    {
+      "fixture": "tests/test_fixed_panel_contract.py",
+      "asserts": "Actual production static assertions with controlled DT metadata: fixed72x40 accepted, wrong width/height and removed rotation property rejected"
+    },
+    {
+      "fixture": "tests/test_runtime_coverage.py",
+      "asserts": "Public full runner rejects empty/unrelated synthetic gcov without real compiler execution; each gated range requires measured lines; complete and missed line/branch parsing"
+    },
+    {
+      "fixture": "tests/test_integration_evidence.py",
+      "asserts": "Actual public shell freshness, output mount, command exits and retained owner/graph/compiler evidence; optional repository-scoped read-only deploy-key mounts and missing-key rejection. Recording Docker/west tools only, no firmware or authenticated fetch. Public DYA wrapper has no credential mounts or URL rewrites."
+    },
+    {
+      "fixture": "tests/integration/module/src/runtime_test.c",
+      "asserts": "Actual Zephyr kernel/workqueue behavior with a recording display including quiet decision races, positive timeout re-enable while old disable handler runs, and LED tuple republish during paused expiry when enabled; existing runtime/blank/external-port assertions retained; same ELF repeated three times per configuration"
+    },
+    {
+      "fixture": "tests/integration/check-fixed-panel.sh",
+      "asserts": "Real supported-core DT/kernel builds reject stale rotation and wrong physical dimensions with expected diagnostics; retain actual nonzero exits"
+    },
+    {
+      "fixture": "tests/check_render_cache.py",
+      "asserts": "Normal actual driver fixture passes; compiled test-only bypass restores old redraw-on-every-notification behavior and must fail the exact draw/write assertion"
+    },
+    {
+      "fixture": "tests/test_symbol_generator.py",
+      "asserts": "Missing/stray symbols, nonblank zero marker, malformed/incomplete/duplicate/outside rows reject asset generation"
+    },
+    {
+      "fixture": "tests/test_partial_render.c",
+      "asserts": "Fixture-only unrelated header sentinel survives partial normal/LED update; restoring sentinel gives exact complete frame. Executed under all quick/full C variants."
+    },
+    {
+      "fixture": "tests/check_partial_render.py",
+      "asserts": "Same actual fixture with unchanged prior/current headers; both prior full-redraw cases must fail the exact untouched-group assertion, both current cases pass; source is not rewritten"
+    },
+    {
+      "fixture": "tests/test_led_dependency_access.py",
+      "asserts": "Actual CI access entry accepts absent/empty optional key for manifest HTTPS; explicitly supplied sentinel key gets0600 permissions and is not logged; missing runner paths reject before writing a key. No real credential or network access."
+    }
+  ],
+  "limits": "Host function extraction and controlled registry/workqueue/tool stand-ins do not prove real scheduling, persistent storage, I2C deadlines or radio/physical behavior; native and unchanged stock/DYA compile variants remain separate.",
+  "execution": {
+    "default": "quick: every host behavioral fixture/scenario under ASan/UBSan once; validator/process units once; native kernel fixtures use the separate integration entry",
+    "full": "ZMK_TEST_MODE=full: same host scenarios plus optimized and measured coverage variants; kernel/supported-core compilation uses separate integration entry",
+    "integration": "owner native/DTS/API guards when interfaces or kernel contracts change; not a prerequisite for pure host behavior",
+    "transport": "actual ordered USB/BLE/split/power/reset evidence; archived simulation is not a passing substitute"
+  },
+  "migration": "tests/fixed-layout-migration.md"
+}

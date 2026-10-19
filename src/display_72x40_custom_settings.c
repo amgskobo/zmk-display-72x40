@@ -25,7 +25,7 @@
 
 #include <zmk-display-72x40/display_72x40.h>
 
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_REGISTER(zmk_display_72x40_display_72x40_custom_settings, CONFIG_ZMK_DISPLAY_72X40_LOG_LEVEL);
 
 #define DT_DRV_COMPAT zmk_display_72x40
 #define D72X40_NODE DT_DRV_INST(0)
@@ -125,8 +125,14 @@ static bool d72x40_read_int32(const struct zmk_custom_setting *setting, int32_t 
     return true;
 }
 
+/* Registry callbacks run on the raising thread. Serialize the complete re-read
+ * and apply so an older callback cannot overwrite a newer registry value. */
+K_MUTEX_DEFINE(d72x40_settings_apply_mutex);
+
 static void d72x40_apply_settings(void) {
     int32_t number;
+
+    k_mutex_lock(&d72x40_settings_apply_mutex, K_FOREVER);
 
     if (d72x40_read_int32(&d72x40_cs_blank_after, &number)) {
         zmk_display_72x40_set_blank_after_ms((uint32_t)CLAMP(number, 0, D72X40_BLANK_AFTER_MAX_S) *
@@ -140,6 +146,7 @@ static void d72x40_apply_settings(void) {
         zmk_display_72x40_set_led_splash_ms((uint32_t)CLAMP(number, 0, 10000));
     }
 #endif
+    k_mutex_unlock(&d72x40_settings_apply_mutex);
 }
 
 static int d72x40_settings_event_cb(const zmk_event_t *eh) {
