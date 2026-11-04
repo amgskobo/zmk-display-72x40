@@ -37,15 +37,39 @@ static struct k_work_q lowprio_queue;
 static struct nrf_power power_peripheral;
 static int reports;
 static struct zmk_display_72x40_power_state_changed last_report;
+static void (*during_budget_read)(void);
+static atomic_t d72x40_power_sync_left;
 
-static atomic_val_t atomic_get(const atomic_t *target) { return *target; }
+static atomic_val_t atomic_get(const atomic_t *target) {
+    const atomic_val_t value = *target;
+    if (target == &d72x40_power_sync_left && during_budget_read) {
+        void (*hook)(void) = during_budget_read;
+        during_budget_read = NULL;
+        hook();
+    }
+    return value;
+}
 static atomic_val_t atomic_set(atomic_t *target, atomic_val_t value) {
     const atomic_val_t old = *target;
     *target = value;
     return old;
 }
 /* Zephyr's returns the value from before the decrement. */
-static atomic_val_t atomic_dec(atomic_t *target) { return (*target)--; }
+static atomic_val_t atomic_dec(atomic_t *target) __attribute__((unused));
+static atomic_val_t atomic_dec(atomic_t *target) {
+    const atomic_val_t value = (*target)--;
+    if (during_budget_read) {
+        void (*hook)(void) = during_budget_read;
+        during_budget_read = NULL;
+        hook();
+    }
+    return value;
+}
+static bool atomic_cas(atomic_t *target, atomic_val_t old, atomic_val_t next) {
+    if (*target != old) { return false; }
+    *target = next;
+    return true;
+}
 static struct k_work_q *zmk_workqueue_lowprio_work_q(void) { return &lowprio_queue; }
 static int k_work_schedule_for_queue(struct k_work_q *queue, struct k_work_delayable *work,
                                      k_timeout_t delay) {
@@ -103,6 +127,26 @@ static void link(bool connected) {
     assert(d72x40_power_listener(&ev.header) == ZMK_EV_EVENT_BUBBLE);
 }
 
+static void reconnect_during_old_callback(void) { link(true); }
+static void disconnect_during_old_callback(void) { link(false); }
+
+static void test_reconnect_budget(void) {
+    const int before = reports;
+    link(false);
+    during_budget_read = reconnect_during_old_callback;
+    /* The already-running callback saw the disconnected budget. */
+    d72x40_power_sync_handler(&d72x40_power_sync_work.work);
+    assert(d72x40_power_sync_left == 4 && "old callback erased reconnect retries");
+    for (int i = 0; i < 4; i++) { run(&d72x40_power_sync_work); }
+    assert(reports == before + 4 && d72x40_power_sync_left == 0);
+
+    link(true);
+    during_budget_read = disconnect_during_old_callback;
+    run(&d72x40_power_sync_work);
+    assert(reports == before + 4 && d72x40_power_sync_left == 0);
+    assert(!d72x40_power_sync_work.scheduled);
+}
+
 int main(void) {
     /* A link before the first poll has nothing to repeat yet. */
     link(true);
@@ -138,6 +182,7 @@ int main(void) {
     assert(!d72x40_power_sync_work.scheduled && d72x40_power_sync_left == 0);
     const zmk_event_t other = {2};
     assert(d72x40_power_listener(&other) == ZMK_EV_EVENT_BUBBLE);
+    test_reconnect_budget();
     puts("display power reporter: PASS");
     return 0;
 }

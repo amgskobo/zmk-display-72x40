@@ -90,10 +90,13 @@ static void d72x40_power_sync_handler(struct k_work *work) {
         return;
     }
 
-    atomic_val_t left = atomic_dec(&d72x40_power_sync_left);
+    const atomic_val_t left = atomic_get(&d72x40_power_sync_left);
 
-    if (left <= 0) {
-        atomic_set(&d72x40_power_sync_left, 0);
+    /* A disconnected callback may still be running when a new connection
+     * publishes its retry budget. Never write zero from an old snapshot.
+     * Consume a retry only if the observed value still matches; the link event schedules
+     * its own first attempt when this single compare-and-swap loses. */
+    if (left <= 0 || !atomic_cas(&d72x40_power_sync_left, left, left - 1)) {
         return;
     }
 
