@@ -40,5 +40,12 @@
     "benchmark": "Eleven explicit mixed/repeated/single-field workloads, same actual headers/input/compiler, >=3 repeats per binary. Host CPU only; Flash/RAM must come from real linked firmware.",
     "partial": "Six fixed normal groups and bounded LED ranges reuse the same44-byte cache; peer visibility invalidates B/L label; unchanged intermediate LED value restored. Full view changes/reset and complete status updates retain full rendering.",
     "partial_control": "tests/test_partial_render.c runs under quick/full; check_partial_render.py compiles the same fixture against actual prior/current headers and requires exact original sentinel assertion failures plus current complete-frame equality."
+  },
+  "power_reconnect": {
+    "host": "tests/runtime/power_harness.c",
+    "kernel": "tests/power-kernel/run.sh; actual reporter and real Zephyr atomics/workqueue/timers, three identical-binary runs",
+    "contract": "An old disconnected callback cannot erase a new four-attempt reconnect budget; CAS failure does not publish from an invalidated positive snapshot",
+    "negative": "Unmodified prior source must fail the named reconnect-budget assertion",
+    "limits": "VBUS and event/relay adapters are stand-ins; real adapters compile in owner firmware matrices; physical delivery and power remain separate"
   }
 }

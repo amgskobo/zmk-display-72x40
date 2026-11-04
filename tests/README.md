@@ -393,3 +393,23 @@ UINT32_MAX-to0 and a new report at0. An unknown frame remains queued without
 a bus write while that report is recent. These controlled-time cases use the
 actual driver functions; the native matrices separately retain real-kernel
 one-operation-per-report assertions. Physical bus timing remains a separate gate.
+
+## Reconnect retry ownership
+
+The power host fixture reconnects after an old callback has observed a zero
+retry budget and requires all four new attempts to survive. A second case
+invalidates a positive snapshot and checks that compare-and-swap failure sends
+nothing. The native entry below includes the actual unmodified reporter source,
+uses real Zephyr atomics, timers and workqueues, and pauses the atomic read/decrement
+boundary through test wrappers. VBUS and relay/event adapters are explicit test
+stand-ins; the supported-core firmware matrices separately compile real adapters.
+
+```sh
+ZMK_TEST_OUTPUT=FRESH bash tests/power-kernel/run.sh RESOLVED_WORKSPACE
+```
+
+One binary runs three times and requires four ordered retries at the original
+1000ms first delay and 1500ms retry delay. `DISPLAY_POWER_SOURCE` can select the
+unchanged prior source for a negative control; all three runs must fail the
+named `old callback erased reconnect retries` assertion. This does not establish
+physical split relay delivery or power measurement.
